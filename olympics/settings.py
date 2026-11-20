@@ -12,6 +12,7 @@ SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 ALLOWED_HOSTS = ["127.0.0.1", *env_list("DJANGO_ALLOWED_HOSTS")]
 POCKET_ID_ISSUER = os.environ["POCKET_ID_ISSUER"]
 ORGANIZER_SUBJECTS = frozenset(env_list("OLYMPICS_ORGANIZER_SUBJECTS"))
+BGG_API_TOKEN = os.environ.get("BGG_API_TOKEN", "")
 
 INSTALLED_APPS = ["olympics"]
 MIDDLEWARE = [
@@ -32,7 +33,7 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.environ.get("OLYMPICS_DB_PATH", BASE_DIR / "olympics.sqlite3"),
-        "OPTIONS": {"timeout": 10},
+        "OPTIONS": {"timeout": 10, "transaction_mode": "IMMEDIATE"},
     }
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

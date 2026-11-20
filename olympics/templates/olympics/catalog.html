@@ -1,0 +1,8 @@
+{% extends "olympics/base.html" %}
+{% block content %}
+<h1>Game catalog</h1>
+{% if organizer %}<p><a href="{% url 'bgg-search' %}">Search BoardGameGeek</a> or <a href="{% url 'create-game' %}">add a game manually</a>.</p>{% endif %}
+<ul>
+  {% for game in games %}<li><a href="{% url 'game' game.pk %}">{{ game }}</a></li>{% empty %}<li>No games yet.</li>{% endfor %}
+</ul>
+{% endblock %}

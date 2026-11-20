@@ -1,0 +1,12 @@
+{% extends "olympics/base.html" %}
+{% block title %}{{ title }} | Board Game Olympics{% endblock %}
+{% block content %}
+{% if edition %}<p><a href="{% url 'edition' edition.year %}">Back to the {{ edition.year }} Olympics</a></p>{% endif %}
+<h1>{{ title }}</h1>
+{% if hint %}<p>{{ hint }}</p>{% endif %}
+<form method="post">
+  {% csrf_token %}
+  {{ form }}
+  <button type="submit">{% if form.fields %}Save{% else %}Confirm{% endif %}</button>
+</form>
+{% endblock %}

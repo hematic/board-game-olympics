@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Board Game Olympics{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+    body { max-width: 62rem; margin: auto; padding: 1rem; }
+    nav { display: flex; flex-wrap: wrap; gap: .75rem; align-items: baseline; }
+    section, article { border: 1px solid GrayText; border-radius: .6rem; padding: 1rem; margin: 1rem 0; }
+    section > :first-child, article > :first-child { margin-top: 0; }
+    form > div { margin: .8rem 0; }
+    label { display: block; }
+    input, select, textarea, button { font: inherit; max-width: 100%; }
+    input:not([type=checkbox]), select, textarea, button { box-sizing: border-box; padding: .4rem; }
+    textarea { width: min(100%, 38rem); }
+    th, td { padding: .3rem .8rem .3rem 0; text-align: left; }
+    .errorlist { color: #b32c20; font-weight: bold; }
+    @media (prefers-color-scheme: dark) { .errorlist { color: #ff9a8f; } }
+  </style>
+</head>
+<body>
+  <nav aria-label="Main"><a href="{% url 'home' %}">Board Game Olympics</a><a href="{% url 'catalog' %}">Game catalog</a></nav>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

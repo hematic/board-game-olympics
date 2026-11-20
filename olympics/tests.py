@@ -1,6 +1,11 @@
-from django.test import TestCase, override_settings
+from unittest.mock import patch
+from xml.etree import ElementTree
 
-from .models import Member
+from django.test import TestCase, override_settings
+from django.urls import reverse
+
+from . import bgg, competition
+from .models import Edition, Game, Member
 
 
 @override_settings(
@@ -37,3 +42,157 @@ class ProxyIdentityTests(TestCase):
     def test_health_is_accessible_without_https_or_a_member(self):
         self.assertContains(self.client.get("/healthz/"), "ok")
         self.assertFalse(Member.objects.exists())
+
+
+@override_settings(
+    POCKET_ID_ISSUER="https://id.example.invalid",
+    ORGANIZER_SUBJECTS={"organizer-id"},
+)
+class EditionWorkflowTests(TestCase):
+    def request(self, route, data=None, *, member="organizer-id", **kwargs):
+        url = reverse(route, kwargs=kwargs)
+        options = {"secure": True, "headers": {"Remote-Sub": member, "Remote-Name": member}}
+        return (self.client.get(url, **options) if data is None
+                else self.client.post(url, data, **options))
+
+    def manage(self, action, data, year=2026):
+        return self.request("manage-edition", data, year=year, action=action)
+
+    def draft(self, slots, count, *, historical=False):
+        for member in ("Alice voter", "Bob voter"):
+            self.request("home", member=member.replace(" ", "-"))
+        self.assertEqual(self.request("create-edition", {
+            "year": 2026, "slots": slots, "historical": historical,
+        }).status_code, 302)
+        edition = Edition.objects.get()
+        games = [Game.objects.create(title=f"Game {index:02}") for index in range(count)]
+        if not historical:
+            self.assertEqual(self.manage("voters", {
+                "members": list(Member.objects.exclude(subject="organizer-id").values_list("pk", flat=True))
+            }).status_code, 302)
+        self.assertEqual(self.manage("competitors", {"names": "Pat\nQuinn\nSam"}).status_code, 302)
+        self.assertEqual(self.manage("nominees", {"games": [game.pk for game in games]}).status_code, 302)
+        return edition, list(edition.nomination_set.all())
+
+    def test_vote_privacy_cutoff_resolution_tied_scoring_and_archive(self):
+        edition, (first, second, third) = self.draft(2, 3)
+        self.assertEqual(self.request("edition", year=2026, member="Alice-voter").status_code, 404)
+        self.assertEqual(self.manage("start", {}).status_code, 302)
+        self.assertEqual(self.manage("nominees", {"games": []}).status_code, 404)
+        self.assertEqual(self.request("ballot", year=2026, member="organizer-id").status_code, 404)
+        self.assertEqual(self.request("manage-edition", {}, year=2026, action="close",
+                                      member="Alice-voter").status_code, 403)
+        duplicate = self.request("ballot", {"rank_1": first.pk, "rank_2": first.pk},
+                                 year=2026, member="Alice-voter")
+        self.assertContains(duplicate, "Rank each game only once")
+        self.assertEqual(self.request("ballot", {"rank_1": second.pk, "rank_2": third.pk},
+                                      year=2026, member="Alice-voter").status_code, 302)
+        self.assertEqual(self.request("ballot", {"rank_1": first.pk, "rank_2": second.pk},
+                                      year=2026, member="Alice-voter").status_code, 302)
+        preclose = self.request("edition", year=2026)
+        self.assertContains(preclose, "Ballots submitted: 1 / 2")
+        self.assertNotContains(preclose, "Alice-voter")
+        self.assertNotContains(preclose, "Ballot points:")
+        self.assertNotContains(self.request("edition", year=2026, member="Bob-voter"), "Ballots submitted:")
+        self.assertNotContains(self.request("game", pk=first.game_id, member="Bob-voter"), "Alice-voter")
+        self.assertEqual(self.request("ballot", {"rank_1": first.pk, "rank_2": third.pk},
+                                      year=2026, member="Bob-voter").status_code, 302)
+        self.assertEqual(self.manage("close", {}).status_code, 302)
+        edition.refresh_from_db()
+        self.assertEqual(edition.phase, Edition.Phase.CUTOFF)
+        self.assertContains(self.request("edition", year=2026, member="Future-member"), "Alice-voter")
+        self.assertEqual(self.request("ballot", {"rank_1": third.pk, "rank_2": first.pk},
+                                      year=2026, member="Alice-voter").status_code, 404)
+        self.assertContains(self.manage("cutoff", {"games": [first.pk], "reason": "Not eligible"}),
+                            "Select a valid choice")
+        self.assertEqual(self.manage("cutoff", {"games": [second.pk], "reason": "Shorter game"}).status_code, 302)
+        players = list(edition.competitor_set.all())
+        ranks = {str(person.pk): place for person, place in zip(players, (1, 1, 3))}
+
+        def game_action(entry, action, data):
+            return self.request("manage-game", data, year=2026, pk=entry.pk, action=action)
+
+        self.assertEqual(game_action(first, "scoring", {"mode": "placement", "awards": "10,6,3"}).status_code, 302)
+        self.assertEqual(game_action(first, "results", ranks).status_code, 302)
+        self.assertEqual(game_action(first, "scoring", {"mode": "winner", "awards": "1"}).status_code, 404)
+        self.assertEqual(game_action(second, "scoring", {"mode": "winner", "awards": "5"}).status_code, 302)
+        self.assertContains(game_action(second, "results", {**ranks, str(players[2].pk): 2}),
+                            "skipping occupied places")
+        self.assertEqual(game_action(second, "results", ranks).status_code, 302)
+        self.assertEqual(competition.standings(edition), [(1, "Pat", 15), (1, "Quinn", 15), (3, "Sam", 3)])
+        self.assertEqual(self.manage("archive", {}).status_code, 302)
+        history = self.request("game", pk=second.game_id, member="Future-member")
+        self.assertContains(history, "Alice-voter: Rank 2")
+        self.assertContains(history, "Bob-voter: Unranked")
+        self.assertEqual(game_action(second, "results", ranks).status_code, 404)
+
+    def test_full_ten_slot_ballots_and_fewer_than_ten_nominees(self):
+        edition, games = self.draft(10, 11)
+        self.assertEqual(self.manage("start", {}).status_code, 302)
+        self.assertContains(self.request("ballot", {"rank_1": games[0].pk}, year=2026,
+                                         member="Alice-voter"), "This field is required")
+        self.assertEqual(self.request("ballot", {
+            f"rank_{rank}": game.pk for rank, game in enumerate(games[:10], 1)
+        }, year=2026, member="Alice-voter").status_code, 302)
+        self.assertEqual(self.manage("close", {}).status_code, 302)
+        self.assertEqual(list(edition.nomination_set.filter(selected=True).values_list("pk", flat=True)),
+                         [game.pk for game in games[:10]])
+
+        edition = Edition.objects.create(year=2027, slots=10, phase=Edition.Phase.OPEN)
+        for game in games[:2]:
+            edition.nomination_set.create(game=game.game, title=game.title)
+        edition.voter_set.create(member=Member.objects.get(subject="Alice-voter"), name="Alice")
+        first, second = list(edition.nomination_set.all())
+        self.assertEqual(self.request("ballot", {"rank_1": first.pk, "rank_2": second.pk},
+                                      year=2027, member="Alice-voter").status_code, 302)
+        self.assertEqual(self.manage("close", {}, year=2027).status_code, 302)
+        self.assertEqual([game.total_votes for game in edition.nomination_set.all()], [10, 9])
+
+    def test_cutoff_uses_later_rank_when_first_place_counts_match(self):
+        edition, (a, b, c, d, e) = self.draft(3, 5)
+        # A and B have four points and no firsts; A has more seconds.
+        for index, ranks in enumerate(((c, a, b), (c, a, b), (d, b, e), (d, c, e))):
+            member = Member.objects.create(issuer="https://id.example.invalid", subject=f"extra-{index}")
+            edition.voter_set.create(member=member, name=str(index), ranking=[game.pk for game in ranks])
+        edition.phase = Edition.Phase.OPEN
+        edition.save(update_fields=["phase"])
+        self.assertEqual(self.manage("close", {}).status_code, 302)
+        a.refresh_from_db()
+        b.refresh_from_db()
+        self.assertEqual((a.total_votes, b.total_votes), (4, 4))
+        self.assertTrue(a.selected)
+        self.assertFalse(b.selected)
+
+    def test_historical_records_can_have_gaps(self):
+        edition, (first, second) = self.draft(1, 2, historical=True)
+        self.assertEqual(self.manage("start", {}).status_code, 302)
+        self.assertEqual(self.request("manage-game", {"votes": "Pat: Yes\nQuinn: No"},
+                                      year=2026, pk=first.pk, action="historical-votes").status_code, 302)
+        self.assertEqual(self.manage("archive", {}).status_code, 302)
+        history = self.request("edition", year=2026, member="Future-member")
+        self.assertContains(history, "Pat: Yes")
+        self.assertContains(history, "No voting record available")
+        self.assertContains(history, "No results on record", count=2)
+
+    @patch("olympics.bgg.fetch")
+    def test_bgg_import_reuse_and_youtube_link(self, fetch):
+        fetch.side_effect = [
+            ElementTree.fromstring('<items><item id="42"><name value="Example"/></item></items>'),
+            ElementTree.fromstring(
+                '<items><item id="42" type="boardgame"><name type="primary" value="Example"/>'
+                '<minplayers value="2"/><maxplayers value="4"/><playingtime value="30"/>'
+                '<description>A summary.</description></item></items>'
+            ),
+        ]
+        result = self.client.get(reverse("bgg-search"), {"q": "Example"}, secure=True,
+                                 headers={"Remote-Sub": "organizer-id"})
+        self.assertContains(result, "Import Example")
+        self.assertEqual(self.request("bgg-search", {"id": 42}).status_code, 302)
+        self.assertEqual(self.request("bgg-search", {"id": 42}).status_code, 302)
+        self.assertEqual(fetch.call_count, 2)
+        game = Game.objects.get(bgg_id=42)
+        self.assertEqual(self.request("edit-game", {"video_url": "https://youtu.be/AbC123def45"},
+                                      pk=game.pk).status_code, 302)
+        page = self.request("game", pk=game.pk, member="new-member")
+        for text in ("A summary.", "2–4", "30 minutes", "https://www.youtube.com/watch?v=AbC123def45"):
+            self.assertContains(page, text)

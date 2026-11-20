@@ -22,9 +22,14 @@ class ProxyIdentityMiddleware:
         ):
             response = HttpResponseForbidden("A verified Pocket ID identity is required.")
         else:
+            name = request.headers.get("Remote-Name", "").strip()[:255]
             request.member, _ = Member.objects.get_or_create(
-                issuer=settings.POCKET_ID_ISSUER, subject=subject
+                issuer=settings.POCKET_ID_ISSUER, subject=subject,
+                defaults={"display_name": name},
             )
+            if name and request.member.display_name != name:
+                request.member.display_name = name
+                request.member.save(update_fields=["display_name"])
             response = self.get_response(request)
 
         add_never_cache_headers(response)

@@ -1,0 +1,8 @@
+{% if game.min_players or game.max_players %}
+  <p>Players: {% if game.min_players and game.max_players %}{{ game.min_players }}–{{ game.max_players }}{% elif game.min_players %}at least {{ game.min_players }}{% else %}up to {{ game.max_players }}{% endif %}</p>
+{% endif %}
+{% if game.playing_time %}<p>Listed playing time: {{ game.playing_time }} minutes</p>{% endif %}
+{% if game.video_url %}<p><a href="{{ game.video_url }}">How to play on YouTube</a></p>{% endif %}
+{% if game.description %}{{ game.description|linebreaks }}{% endif %}
+{% if game.bgg_id %}<p>Source: <a href="https://boardgamegeek.com/boardgame/{{ game.bgg_id }}">BoardGameGeek</a>.</p>{% endif %}
+{% if game.notes %}<p><strong>Organizer notes</strong></p>{{ game.notes|linebreaks }}{% endif %}

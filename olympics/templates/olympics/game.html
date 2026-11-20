@@ -1,0 +1,22 @@
+{% extends "olympics/base.html" %}
+{% block content %}
+<h1>{{ game }}</h1>
+{% if organizer %}<p><a href="{% url 'edit-game' game.pk %}">Edit game</a></p>{% endif %}
+{% include "olympics/game_info.html" %}
+<h2>Olympics history</h2>
+{% for entry, votes in history %}
+<article>
+  <h3><a href="{% url 'edition' entry.edition.year %}">{{ entry.edition.year }} Olympics</a></h3>
+  <p>{% if entry.selected %}Selected{% else %}Nominated, not selected{% endif %}</p>
+  {% include "olympics/results.html" %}
+  {% if entry.edition.historical %}
+    {% if entry.historical_votes %}{{ entry.historical_votes|linebreaks }}{% else %}<p>No voting record available.</p>{% endif %}
+  {% else %}
+    <p>Ballot points: {{ entry.total_votes }}</p>
+    <ul>{% for name, vote in votes %}<li>{{ name }}: {{ vote }}</li>{% endfor %}</ul>
+  {% endif %}
+</article>
+{% empty %}
+<p>Not in any archived editions yet.</p>
+{% endfor %}
+{% endblock %}

@@ -59,6 +59,15 @@ jobs:
           with urllib.request.urlopen(request, timeout=2) as response:
               assert b"Signed in as a member" in response.read()
           PY
+      - name: Verify SQLite backup restores to a fresh volume
+        run: |
+          docker exec olympics-ci python -c 'import sqlite3; source = sqlite3.connect("file:/data/olympics.sqlite3?mode=ro", uri=True); target = sqlite3.connect("/tmp/backup.sqlite3"); source.backup(target); target.close(); source.close()'
+          docker volume create olympics-ci-restore
+          docker exec olympics-ci cat /tmp/backup.sqlite3 > "$RUNNER_TEMP/olympics-ci.sqlite3"
+          docker run --rm -i --volume olympics-ci-restore:/data olympics-ci \
+            sh -c 'set -C; cat > /data/olympics.sqlite3' < "$RUNNER_TEMP/olympics-ci.sqlite3"
+          docker run --rm --volume olympics-ci-restore:/data olympics-ci \
+            python -c 'import sqlite3; db = sqlite3.connect("file:/data/olympics.sqlite3?mode=ro", uri=True); assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",); assert db.execute("SELECT subject FROM olympics_member").fetchone() == ("ci-member",)'
       - name: Print container logs on failure
         if: failure()
         run: |

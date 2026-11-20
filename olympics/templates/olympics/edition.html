@@ -1,0 +1,74 @@
+{% extends "olympics/base.html" %}
+{% block title %}{{ edition.year }} Olympics{% endblock %}
+{% block content %}
+<h1>{{ edition.year }} Olympics</h1>
+<p>{{ edition.get_phase_display }}{% if edition.historical %} (historical entry){% endif %}</p>
+{{ edition.history_notes|linebreaks }}
+{% if organizer %}
+<section>
+  <h2>Organizer tools</h2>
+  <nav aria-label="Edition management">
+  {% if edition.phase == 'draft' %}
+    <a href="{% url 'manage-edition' edition.year 'setup' %}">Edition settings</a>
+    {% if not edition.historical %}<a href="{% url 'manage-edition' edition.year 'voters' %}">Eligible voters</a>{% endif %}
+    <a href="{% url 'manage-edition' edition.year 'competitors' %}">Competitors</a>
+    <a href="{% url 'manage-edition' edition.year 'nominees' %}">{% if edition.historical %}Historical lineup{% else %}Nominate games{% endif %}</a>
+    <a href="{% url 'manage-edition' edition.year 'start' %}">{% if edition.historical %}Lock the historical lineup{% else %}Open voting{% endif %}</a>
+  {% elif edition.phase == 'open' %}
+    <a href="{% url 'manage-edition' edition.year 'close' %}">Close voting and reveal ballots</a>
+  {% elif edition.phase == 'cutoff' %}
+    <a href="{% url 'manage-edition' edition.year 'cutoff' %}">Resolve the cutoff tie</a>
+  {% elif edition.phase == 'play' %}
+    <a href="{% url 'manage-edition' edition.year 'archive' %}">Finalize and archive</a>
+  {% endif %}
+  </nav>
+  {% if edition.phase == 'open' %}<p>Ballots submitted: {{ turnout }} / {{ eligible }}</p>{% endif %}
+</section>
+{% endif %}
+{% if can_vote %}<p><a href="{% url 'ballot' edition.year %}">Submit or edit your ballot</a></p>{% endif %}
+{% if edition.phase == 'cutoff' %}<p>The final lineup is pending an organizer decision at the cutoff.</p>{% endif %}
+{% if edition.cutoff_reason %}<p><strong>Cutoff decision:</strong> {{ edition.cutoff_reason }}</p>{% endif %}
+<h2>{% if edition.phase == 'open' or edition.phase == 'draft' %}Nominees{% else %}Lineup and results{% endif %}</h2>
+{% for entry in games %}
+<article>
+  <h3><a href="{% url 'game' entry.game_id %}">{{ entry.title }}</a></h3>
+  {% if entry.selected %}<p>Selected{% if entry.cutoff_tied %} by cutoff decision{% endif %}</p>{% elif revealed %}<p>{% if entry.cutoff_tied and edition.phase == 'cutoff' %}Tied at the cutoff{% else %}Not selected{% endif %}</p>{% endif %}
+  {% if revealed %}<p>Ballot points: {{ entry.total_votes }}. Votes by rank (first onward): {{ entry.vote_breakdown|join:", " }}.</p>{% endif %}
+  {% include "olympics/game_info.html" with game=entry.game %}
+  {% if entry.selected and entry.awards %}<p>{{ entry.get_mode_display }} &ndash; points by place: {{ entry.awards|join:", " }}.</p>{% endif %}
+  {% include "olympics/results.html" %}
+  {% if edition.historical %}
+    {% if entry.historical_votes %}{{ entry.historical_votes|linebreaks }}{% else %}<p>No voting record available.</p>{% endif %}
+  {% endif %}
+  {% if organizer and edition.phase == 'play' and entry.selected %}
+    <nav aria-label="Manage {{ entry.title }}">
+      {% if not entry.scored %}<a href="{% url 'manage-game' edition.year entry.pk 'scoring' %}">Set scoring</a>{% endif %}
+      {% if entry.awards %}<a href="{% url 'manage-game' edition.year entry.pk 'results' %}">{% if entry.scored %}Correct results{% else %}Enter results{% endif %}</a>{% endif %}
+      {% if edition.historical %}<a href="{% url 'manage-game' edition.year entry.pk 'historical-votes' %}">Enter historical votes</a>{% endif %}
+    </nav>
+  {% endif %}
+</article>
+{% empty %}
+<p>No games yet.</p>
+{% endfor %}
+{% if revealed %}
+<section>
+  <h2>Revealed ballots</h2>
+  {% if not ballots or not games.0.total_votes %}<p>No ballots were submitted.</p>{% endif %}
+  {% for name, ranking in ballots %}
+    <h3>{{ name }}</h3>
+    {% if ranking %}<ol>{% for title, points in ranking %}<li>{{ title }}: {{ points }} points</li>{% endfor %}</ol>
+    {% else %}<p>Abstained.</p>{% endif %}
+  {% endfor %}
+</section>
+{% endif %}
+{% if edition.phase == 'play' or edition.phase == 'archived' %}
+<section>
+  <h2>Overall standings</h2>
+  <table>
+    <thead><tr><th scope="col">Rank</th><th scope="col">Competitor</th><th scope="col">Points</th></tr></thead>
+    <tbody>{% for rank, name, points in standings %}<tr><td>{{ rank }}</td><td>{{ name }}</td><td>{{ points }}</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

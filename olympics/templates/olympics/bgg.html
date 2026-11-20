@@ -1,0 +1,22 @@
+{% extends "olympics/base.html" %}
+{% block content %}
+<h1>Search BoardGameGeek</h1>
+<form method="get">
+  <label for="q">Game name</label>
+  <input id="q" name="q" value="{{ query }}" maxlength="100" required>
+  <button type="submit">Search</button>
+</form>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if results %}
+  <ul>
+  {% for item in results %}
+    <li><form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="id" value="{{ item.id }}">
+      <button type="submit">Import {{ item.title }}{% if item.year %} ({{ item.year }}){% endif %}</button>
+    </form></li>
+  {% endfor %}
+  </ul>
+{% elif query and not error %}<p>No matches found.</p>{% endif %}
+<p><a href="{% url 'create-game' %}">Add a game manually</a></p>
+{% endblock %}

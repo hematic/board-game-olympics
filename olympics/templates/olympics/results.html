@@ -1,0 +1,10 @@
+{% if entry.scored %}
+  <table>
+    <thead><tr><th scope="col">Place</th><th scope="col">Competitor</th><th scope="col">Points</th></tr></thead>
+    <tbody>{% for result in entry.result_set.all %}
+      <tr><td>{{ result.place }}</td><td>{{ result.competitor.name }}</td><td>{{ result.points }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+{% elif entry.selected %}
+  <p>{% if entry.edition.historical %}No results on record.{% else %}Results not recorded yet.{% endif %}</p>
+{% endif %}
