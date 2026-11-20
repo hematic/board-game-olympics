@@ -1,0 +1,23 @@
+services:
+  app:
+    image: ${OLYMPICS_IMAGE:?Set OLYMPICS_IMAGE}
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS}
+      POCKET_ID_ISSUER: ${POCKET_ID_ISSUER:?Set POCKET_ID_ISSUER}
+      OLYMPICS_ORGANIZER_SUBJECTS: ${OLYMPICS_ORGANIZER_SUBJECTS:-}
+    volumes:
+      - olympics-data:/data
+    networks:
+      proxy:
+        aliases:
+          - olympics-web
+    restart: unless-stopped
+
+volumes:
+  olympics-data:
+
+networks:
+  proxy:
+    external: true
+    name: ${OLYMPICS_PROXY_NETWORK:?Set OLYMPICS_PROXY_NETWORK}

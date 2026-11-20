@@ -1,0 +1,7 @@
+**
+!requirements.txt
+!manage.py
+!olympics/
+!olympics/**
+olympics/**/__pycache__/
+olympics/tests.py
