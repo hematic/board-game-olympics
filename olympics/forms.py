@@ -2,8 +2,19 @@ import re
 from urllib.parse import parse_qs, urlsplit
 
 from django import forms
+from django.contrib.auth.forms import UserCreationForm
 
-from .models import Edition, Game, Nomination
+from .models import Edition, Game, Member, Nomination
+
+
+class AccountCreationForm(UserCreationForm):
+    display_name = forms.CharField(max_length=255, required=False)
+    existing_member = forms.ModelChoiceField(
+        queryset=Member.objects.filter(user__isnull=True).order_by("display_name", "pk"),
+        required=False,
+        label="Link an existing member",
+        help_text="Optional. Keeps this member's previous ballots and voter roster entries.",
+    )
 
 
 class EditionForm(forms.ModelForm):

@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DJANGO_SECRET_KEY: ci-only-not-a-deployment-secret
-      POCKET_ID_ISSUER: https://id.example.invalid
     steps:
       - uses: actions/checkout@v5
         with:
@@ -33,9 +32,11 @@ jobs:
       - name: Smoke-test image and database volume
         run: |
           docker volume create olympics-ci-data
-          docker run --rm --env DJANGO_SECRET_KEY --env POCKET_ID_ISSUER \
+          docker run --rm --env DJANGO_SECRET_KEY \
             --volume olympics-ci-data:/data olympics-ci python manage.py migrate --noinput
-          docker run --detach --name olympics-ci --env DJANGO_SECRET_KEY --env POCKET_ID_ISSUER \
+          docker run --rm --env DJANGO_SECRET_KEY --env DJANGO_SUPERUSER_EMAIL= \
+            --volume olympics-ci-data:/data olympics-ci python manage.py createsuperuser --noinput --username ci-organizer
+          docker run --detach --name olympics-ci --env DJANGO_SECRET_KEY \
             --volume olympics-ci-data:/data olympics-ci
           docker exec -i olympics-ci python - <<'PY'
           import time
@@ -54,10 +55,11 @@ jobs:
                   time.sleep(1)
 
           request = urllib.request.Request(
-              base + "/", headers={"X-Forwarded-Proto": "https", "Remote-Sub": "ci-member"}
+              base + "/", headers={"X-Forwarded-Proto": "https"}
           )
           with urllib.request.urlopen(request, timeout=2) as response:
-              assert b"Signed in as a member" in response.read()
+              assert response.geturl().startswith(base + "/login/")
+              assert b"Use the username and password your organizer gave you." in response.read()
           PY
       - name: Verify SQLite backup restores to a fresh volume
         run: |
@@ -67,7 +69,7 @@ jobs:
           docker run --rm -i --volume olympics-ci-restore:/data olympics-ci \
             sh -c 'set -C; cat > /data/olympics.sqlite3' < "$RUNNER_TEMP/olympics-ci.sqlite3"
           docker run --rm --volume olympics-ci-restore:/data olympics-ci \
-            python -c 'import sqlite3; db = sqlite3.connect("file:/data/olympics.sqlite3?mode=ro", uri=True); assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",); assert db.execute("SELECT subject FROM olympics_member").fetchone() == ("ci-member",)'
+            python -c 'import sqlite3; db = sqlite3.connect("file:/data/olympics.sqlite3?mode=ro", uri=True); assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",); assert db.execute("SELECT username, is_superuser FROM auth_user").fetchone() == ("ci-organizer", 1)'
       - name: Print container logs on failure
         if: failure()
         run: |

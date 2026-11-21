@@ -3,6 +3,7 @@ from django.db import models
 
 
 class Member(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     issuer = models.CharField(max_length=255)
     subject = models.CharField(max_length=255)
     display_name = models.CharField(max_length=255, blank=True)
@@ -17,10 +18,7 @@ class Member(models.Model):
 
     @property
     def is_organizer(self) -> bool:
-        return (
-            self.issuer == settings.POCKET_ID_ISSUER
-            and self.subject in settings.ORGANIZER_SUBJECTS
-        )
+        return self.user_id is not None and self.user.is_active and self.user.is_superuser
 
 
 class Game(models.Model):

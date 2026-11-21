@@ -1,4 +1,7 @@
 from django import forms
+from django.contrib.auth.decorators import login_not_required
+from django.contrib.auth.forms import SetPasswordForm
+from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import Http404, HttpRequest, HttpResponse
@@ -7,7 +10,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_safe
 
 from . import bgg, competition
-from .forms import BallotForm, EditionForm, GameForm, ResultsForm, ScoringForm, WikidataGameForm
+from .forms import AccountCreationForm, BallotForm, EditionForm, GameForm, ResultsForm, ScoringForm, WikidataGameForm
 from .models import Competitor, Edition, Game, Member, Nomination, Result, Voter
 
 Phase = Edition.Phase
@@ -45,9 +48,48 @@ def home(request: HttpRequest) -> HttpResponse:
     })
 
 
+@login_not_required
 @require_safe
 def health(request: HttpRequest) -> HttpResponse:
     return HttpResponse("ok\n", content_type="text/plain")
+
+
+@require_safe
+def accounts(request):
+    organizer(request)
+    return render(request, "olympics/accounts.html", {
+        "accounts": Member.objects.filter(user__isnull=False).select_related("user").order_by("display_name", "pk"),
+    })
+
+
+@require_http_methods(["GET", "POST"])
+@transaction.atomic
+def create_account(request):
+    organizer(request)
+    form = AccountCreationForm(request.POST if request.method == "POST" else None)
+    if form.is_valid():
+        existing = form.cleaned_data["existing_member"]
+        user = form.save()
+        name = form.cleaned_data["display_name"]
+        if existing is None:
+            Member.objects.create(user=user, issuer="local", subject=str(user.pk), display_name=name or user.username)
+        else:
+            existing.user = user
+            existing.display_name = name or existing.display_name or user.username
+            existing.save(update_fields=["user", "display_name"])
+        return redirect("accounts")
+    return form_page(request, "Create account", form)
+
+
+@require_http_methods(["GET", "POST"])
+def reset_account_password(request, pk):
+    organizer(request)
+    user = get_object_or_404(User, pk=pk, is_superuser=False)
+    form = SetPasswordForm(user, request.POST if request.method == "POST" else None)
+    if form.is_valid():
+        form.save()
+        return redirect("accounts")
+    return form_page(request, f"Reset password for {user.username}", form)
 
 
 @require_http_methods(["GET", "POST"])
@@ -129,9 +171,9 @@ def manage_edition(request, year, action):
     elif edition.phase == Phase.DRAFT and action == "voters" and not edition.historical:
         form = build_form({
             "members": forms.ModelMultipleChoiceField(
-                Member.objects.filter(issuer=request.member.issuer).order_by("display_name", "pk"),
+                Member.objects.filter(user__is_active=True).order_by("display_name", "pk"),
                 widget=forms.CheckboxSelectMultiple, required=False,
-                help_text="Invitees appear here after they sign in for the first time.",
+                help_text="Create accounts first, then choose which members can vote.",
             ),
         }, data, {"members": list(edition.voters.values_list("pk", flat=True))})
         if form.is_valid():

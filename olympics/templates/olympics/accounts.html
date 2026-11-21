@@ -1,0 +1,14 @@
+{% extends "olympics/base.html" %}
+{% block title %}Accounts | Board Game Olympics{% endblock %}
+{% block content %}
+<h1>Accounts</h1>
+<p><a href="{% url 'create-account' %}">Create an account</a></p>
+<ul>
+  {% for member in accounts %}
+    <li>{{ member }} ({{ member.user.username }})
+      {% if member.user.is_superuser %}<span class="badge">Organizer</span>
+      {% else %}<a href="{% url 'reset-account-password' member.user_id %}">Reset password</a>{% endif %}
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

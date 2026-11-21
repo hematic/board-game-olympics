@@ -6,53 +6,48 @@ The interface uses a dark holiday theme and adapts to phones and larger screens.
 
 ## Run the app
 
-1. Copy [.env.example](.env.example) to `.env`. Set the site's hostname and the Pocket ID issuer, and supply a strong secret (generate one with `python -c 'import secrets; print(secrets.token_urlsafe(64))'`). Set `OLYMPICS_ORGANIZER_SUBJECTS` to a comma-separated list of organizer Pocket ID `sub` values, not usernames or emails.
-2. Set up [Pocket ID in Tinyauth](https://tinyauth.app/docs/guides/pocket-id/) and restrict this app to your invited Pocket ID group. Attach the reverse proxy to a Docker network dedicated to this app (`docker network create olympics-proxy` with the example defaults), name that network in `.env`, and forward the authenticated `Remote-Sub` and `Remote-Name` headers. See the example below. For BoardGameGeek imports, [register the application](https://boardgamegeek.com/using_the_xml_api) and set `BGG_API_TOKEN`. You can still add games manually without a token.
-3. Set `OLYMPICS_IMAGE=hematic/board-game-olympics:v0.2.0` in `.env`, then pull and start the published image:
+1. Copy [.env.example](.env.example) to `.env`. Set the site's hostname and supply a strong secret (generate one with `python -c 'import secrets; print(secrets.token_urlsafe(64))'`).
+2. Attach your HTTPS reverse proxy to a dedicated Docker network (`docker network create olympics-proxy` with the example defaults) and name that network in `.env`. For BoardGameGeek imports, [register the application](https://boardgamegeek.com/using_the_xml_api) and set `BGG_API_TOKEN`. You can still add games manually without a token.
+3. Set `OLYMPICS_IMAGE=hematic/board-game-olympics:v0.3.0` in `.env`, then pull the image, migrate the database, and create the first organizer. The command prompts for a username and password; leave the email blank.
 
    ```sh
    docker compose pull app
    docker compose run --rm app python manage.py migrate --noinput
+   docker compose run --rm app python manage.py createsuperuser
    docker compose up -d
    ```
 
-   To build from source instead, leave `OLYMPICS_IMAGE` unset and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
+   To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
 
 Use the site's HTTPS URL to sign in. The SQLite database lives on the `olympics-data` Compose volume. Keep one app replica and back up the volume before upgrading. Run the migration command with the new image before starting it.
 
 Migrations seed an 18-game starter catalog with player counts, playtimes, rules videos, and box-art links where available. Existing matches by title are left untouched. No demo accounts, editions, or ballots are included. Cover images still load from their external hosts. Edits made in a running app stay in its data volume; they do not change the bundled starter catalog.
 
-### Reverse proxy boundary
+### HTTPS reverse proxy
 
-**Only the trusted proxy should be able to connect to the app container.** Do not publish the app's port or put untrusted containers on its network. The app expects the proxy to remove client-supplied identity headers and get `Remote-Sub` exclusively from a successful Tinyauth authorization response. Do not configure a fallback provider that can issue identifiers for this app. If `Remote-Sub` is missing, the app denies access.
+**Only the HTTPS proxy should be able to connect to the app container.** Do not publish the app port or put untrusted containers on its network. The app uses its own sign-in and trusts the proxy to set `X-Forwarded-Proto`; no identity headers or external authentication service are needed. For internet-facing deployments, configure login rate limiting at your proxy or edge.
 
-For example, with Caddy serving HTTPS and linked to both the app and Tinyauth:
+For example, with Caddy serving HTTPS and connected to the app's proxy network:
 
 ```caddyfile
 olympics.example.com {
-    route {
-        request_header -Remote-Sub
-        request_header -Remote_Sub
-        request_header -Remote-Name
-        request_header -Remote_Name
-        forward_auth tinyauth:3000 {
-            uri /api/auth/caddy
-            copy_headers Remote-Sub Remote-Name
-        }
-        reverse_proxy olympics-web:8000 {
-            header_up X-Forwarded-Proto https
-        }
+    reverse_proxy olympics-web:8000 {
+        header_up X-Forwarded-Proto https
     }
 }
 ```
 
-Apply the invite-only Tinyauth access policy to this hostname, and check that invited accounts get the member page while other accounts are denied. The app's unauthenticated `/healthz/` is for the internal container probe; the example routes external health requests through Tinyauth too.
+### Managing accounts
+
+Sign in as the organizer and open **Accounts** to create a username and initial password for each family member. Share their credentials privately. There is no public signup or email requirement. Family members can change their own password; the organizer can reset family passwords from **Accounts**.
+
+**Upgrading from Pocket ID/Tinyauth:** Back up the data volume, migrate, and bootstrap an organizer as above. Remove the old proxy authentication rule and the `POCKET_ID_ISSUER` and `OLYMPICS_ORGANIZER_SUBJECTS` settings. Existing ballots and scores stay in the database. When creating a local account, select that person's old profile under **Link an existing member** to retain their voting history and existing voter roster entries. The old proxy logins no longer work.
 
 ## Running an edition
 
 1. Add games manually from **Game catalog**, or search BoardGameGeek if a token is configured. Add YouTube rules links under **Edit game**.
    To show box art, set **Box art image URL** to a direct HTTPS image you have permission to display. The browser loads covers from their source; the app does not download them.
-2. Create the year's edition and set the number of lineup slots (8 by default). Invitees must sign in once before you can add them to the voter roster. Add competitors separately and choose the nominees.
+2. Create the year's edition and set the number of lineup slots (8 by default). Add accounts to the voter roster; they don't need to sign in first. Add competitors separately and choose the nominees.
 3. Open voting. Voters assign points next to each game on the edition page and select **Save ballot**. With the default 8 slots and at least 8 nominees, rank eight distinct games: give 8 points to your favorite, 7 to your next choice, down to 1 for your last pick. Each point value is available for only one game at a time; set a game to **Unranked** to free up its points. The top eight games make the lineup. With fewer nominees than slots, rank all nominees starting at the slot count. Voters can replace their ballot before close. Organizers only see turnout, not ballots or interim totals. Database and backup operators are trusted and can read stored ballots.
 4. Close voting to reveal named ballots to all signed-in members. The app picks the highest totals, comparing counts at each rank in order when tied. If a tie still crosses the cutoff, choose among just the tied games and record a reason.
 5. Set scoring before each game, then record placements. Shared placements get the same full award, and the next occupied place is skipped (1st, 1st, 3rd). Standings update automatically. Finalize the edition when play finishes.

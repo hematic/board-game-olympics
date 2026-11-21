@@ -1,57 +1,80 @@
 from unittest.mock import patch
 from xml.etree import ElementTree
 
-from django.test import TestCase, override_settings
+from django.contrib.auth.models import User
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from . import bgg, competition
 from .models import Edition, Game, Member
 
 
-@override_settings(
-    POCKET_ID_ISSUER="https://id.example.invalid",
-    ORGANIZER_SUBJECTS={"organizer-id"},
-)
-class ProxyIdentityTests(TestCase):
-    def test_requires_a_single_valid_subject_even_if_a_username_is_present(self):
-        for subject in ("", "user-id, organizer-id", "contains space", "x" * 256):
-            with self.subTest(subject=subject):
-                response = self.client.get(
-                    "/", secure=True, headers={"Remote-Sub": subject, "Remote-User": "organizer"}
-                )
-                self.assertEqual(response.status_code, 403)
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class LocalAccountTests(TestCase):
+    def test_proxy_headers_no_longer_grant_access(self):
+        response = self.client.get("/games/", secure=True, headers={"Remote-Sub": "organizer-id"})
+        self.assertRedirects(response, "/login/?next=/games/", fetch_redirect_response=False)
         self.assertFalse(Member.objects.exists())
 
-    def test_subject_identifies_the_member_across_renames(self):
-        for name in ("before", "after"):
-            response = self.client.get(
-                "/", secure=True, headers={"Remote-Sub": "member-id", "Remote-User": name}
-            )
-            self.assertContains(response, "Signed in as a member")
-            self.assertIn("no-store", response.headers["Cache-Control"])
-        self.assertEqual(Member.objects.get().subject, "member-id")
+    def test_organizer_creates_account_and_links_previous_ballot(self):
+        organizer = User.objects.create_superuser("organizer", password="start-organizer-pass")
+        legacy = Member.objects.create(issuer="https://id.example.invalid", subject="legacy", display_name="Pat")
+        edition = Edition.objects.create(year=2027, slots=1, phase=Edition.Phase.OPEN)
+        game = Game.objects.create(title="Legacy ballot game")
+        nominee = edition.nomination_set.create(game=game, title=game.title)
+        edition.voter_set.create(member=legacy, name="Pat", ranking=[nominee.pk])
+        self.client.force_login(organizer)
+        self.assertContains(self.client.get("/accounts/", secure=True), "Create an account")
+        self.assertRedirects(self.client.post("/accounts/new/", {
+            "username": "pat", "password1": "an-initial-family-pass",
+            "password2": "an-initial-family-pass", "existing_member": legacy.pk,
+        }, secure=True), "/accounts/", fetch_redirect_response=False)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.user.username, "pat")
+        family = Client(enforce_csrf_checks=True)
+        self.assertEqual(family.post("/login/", {}, secure=True).status_code, 403)
+        self.assertContains(family.get("/login/", secure=True), "Sign in")
+        csrf = family.cookies["csrftoken"].value
+        self.assertEqual(family.post("/login/", {
+            "username": "pat", "password": "an-initial-family-pass",
+            "csrfmiddlewaretoken": csrf,
+        }, secure=True, headers={"Referer": "https://testserver/login/"}).status_code, 302)
+        page = family.get("/editions/2027/", secure=True)
+        self.assertContains(page, "Your ballot is saved.")
+        self.assertIn("no-store", page.headers["Cache-Control"])
+        self.assertEqual(family.get("/accounts/new/", secure=True).status_code, 403)
+        self.assertRedirects(self.client.post(f"/accounts/{legacy.user_id}/password/", {
+            "new_password1": "another-family-pass", "new_password2": "another-family-pass",
+        }, secure=True), "/accounts/", fetch_redirect_response=False)
+        self.assertRedirects(family.get("/editions/2027/", secure=True),
+                             "/login/?next=/editions/2027/", fetch_redirect_response=False)
+        self.assertTrue(Client().login(username="pat", password="another-family-pass"))
 
-    def test_organizer_is_selected_by_subject_not_name_or_group(self):
-        response = self.client.get(
-            "/", secure=True, headers={"Remote-Sub": "member-id", "Remote-Groups": "organizers"}
-        )
-        self.assertContains(response, "Signed in as a member")
-        response = self.client.get("/", secure=True, headers={"Remote-Sub": "organizer-id"})
-        self.assertContains(response, "Signed in as an organizer")
+    def test_new_family_account_is_available_on_voter_roster_before_sign_in(self):
+        self.client.force_login(User.objects.create_superuser("organizer"))
+        edition = Edition.objects.create(year=2027, slots=8)
+        self.assertEqual(self.client.post("/accounts/new/", {
+            "username": "family", "display_name": "Family member",
+            "password1": "an-initial-family-pass", "password2": "an-initial-family-pass",
+        }, secure=True).status_code, 302)
+        roster = self.client.get(reverse("manage-edition", args=[edition.year, "voters"]), secure=True)
+        self.assertContains(roster, "Family member")
+        self.assertEqual(self.client.get("/logout/", secure=True).status_code, 405)
+        self.assertRedirects(self.client.post("/logout/", secure=True), "/login/", fetch_redirect_response=False)
+        self.assertRedirects(self.client.get("/accounts/", secure=True), "/login/?next=/accounts/",
+                             fetch_redirect_response=False)
 
     def test_health_is_accessible_without_https_or_a_member(self):
         self.assertContains(self.client.get("/healthz/"), "ok")
         self.assertFalse(Member.objects.exists())
 
 
-@override_settings(
-    POCKET_ID_ISSUER="https://id.example.invalid",
-    ORGANIZER_SUBJECTS={"organizer-id"},
-)
 class EditionWorkflowTests(TestCase):
     def request(self, route, data=None, *, member="organizer-id", **kwargs):
         url = reverse(route, kwargs=kwargs)
-        options = {"secure": True, "headers": {"Remote-Sub": member, "Remote-Name": member}}
+        user, _ = User.objects.get_or_create(username=member, defaults={"is_superuser": member == "organizer-id"})
+        self.client.force_login(user)
+        options = {"secure": True}
         return (self.client.get(url, **options) if data is None
                 else self.client.post(url, data, **options))
 
@@ -68,7 +91,7 @@ class EditionWorkflowTests(TestCase):
         games = [Game.objects.create(title=f"Game {index:02}") for index in range(count)]
         if not historical:
             self.assertEqual(self.manage("voters", {
-                "members": list(Member.objects.exclude(subject="organizer-id").values_list("pk", flat=True))
+                "members": list(Member.objects.exclude(user__username="organizer-id").values_list("pk", flat=True))
             }).status_code, 302)
         self.assertEqual(self.manage("competitors", {"names": "Pat\nQuinn\nSam"}).status_code, 302)
         self.assertEqual(self.manage("nominees", {"games": [game.pk for game in games]}).status_code, 302)
@@ -156,7 +179,7 @@ class EditionWorkflowTests(TestCase):
         edition = Edition.objects.create(year=2027, slots=10, phase=Edition.Phase.OPEN)
         for game in games[:2]:
             edition.nomination_set.create(game=game.game, title=game.title)
-        edition.voter_set.create(member=Member.objects.get(subject="Alice-voter"), name="Alice")
+        edition.voter_set.create(member=Member.objects.get(user__username="Alice-voter"), name="Alice")
         first, second = list(edition.nomination_set.all())
         self.assertContains(self.request("edition", {f"game_{first.pk}": 10, f"game_{second.pk}": 1},
                                          year=2027, member="Alice-voter"), "Select a valid choice")
@@ -201,8 +224,8 @@ class EditionWorkflowTests(TestCase):
                 '<description>A summary.</description></item></items>'
             ),
         ]
-        result = self.client.get(reverse("bgg-search"), {"q": "Example"}, secure=True,
-                                 headers={"Remote-Sub": "organizer-id"})
+        self.request("home")
+        result = self.client.get(reverse("bgg-search"), {"q": "Example"}, secure=True)
         self.assertContains(result, "Import Example")
         self.assertEqual(self.request("bgg-search", {"id": 42}).status_code, 302)
         self.assertEqual(self.request("bgg-search", {"id": 42}).status_code, 302)
@@ -216,9 +239,10 @@ class EditionWorkflowTests(TestCase):
 
     def test_old_wikidata_links_are_gone_but_imported_games_remain(self):
         game = Game.objects.create(title="Azul", wikidata_id="Q44367843")
+        self.request("home")
         for path in ("/games/wikidata/", "/games/wikidata/Q44367843/"):
             self.assertEqual(self.client.get(
-                path, secure=True, headers={"Remote-Sub": "organizer-id"},
+                path, secure=True,
             ).status_code, 404)
         self.assertNotContains(self.request("catalog"), "Search Wikidata")
         self.assertContains(self.request("game", pk=game.pk), "https://www.wikidata.org/wiki/Q44367843")
