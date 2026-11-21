@@ -1,7 +1,7 @@
 {% extends "olympics/base.html" %}
 {% block title %}{{ edition.year }} Olympics{% endblock %}
 {% block content %}
-<div class="hero">
+<div class="hero edition-hero">
   <div>
     <p class="eyebrow">The holiday games</p>
     <h1>{{ edition.year }} Olympics</h1>
@@ -9,9 +9,24 @@
   </div>
   {% include "olympics/holiday_art.html" %}
 </div>
+<nav class="edition-links" aria-label="Jump to edition section">
+  {% if edition.phase == 'play' or edition.phase == 'archived' %}
+    <a href="#standings">Overall standings</a>
+    <a href="#game-results">Per-game results</a>
+    {% if scenario_rows %}<a href="#what-if">What if?</a>{% endif %}
+  {% elif ballot_form %}
+    <a href="#ballot">Your ballot</a>
+  {% elif revealed %}
+    <a href="#game-results">Voting results</a>
+  {% else %}
+    <a href="#game-results">Nominees</a>
+  {% endif %}
+  {% if revealed %}<a href="#revealed-ballots">Revealed ballots</a>{% endif %}
+  {% if organizer and edition.phase == 'play' %}<a href="#organizer-tools">Organizer tools</a>{% endif %}
+</nav>
 {{ edition.history_notes|linebreaks }}
 {% if organizer %}
-<section class="organizer-panel">
+<section class="organizer-panel" id="organizer-tools">
   <h2>Organizer tools</h2>
   <nav aria-label="Edition management">
   {% if edition.phase == 'draft' %}
@@ -33,7 +48,7 @@
 {% endif %}
 {% if edition.phase == 'cutoff' %}<p>The final lineup is pending an organizer decision at the cutoff.</p>{% endif %}
 {% if edition.cutoff_reason %}<p><strong>Cutoff decision:</strong> {{ edition.cutoff_reason }}</p>{% endif %}
-<h2 class="section-heading">{% if edition.phase == 'open' or edition.phase == 'draft' %}Nominees{% else %}Lineup and results{% endif %}</h2>
+<h2 class="section-heading" id="game-results">{% if edition.phase == 'open' or edition.phase == 'draft' %}Nominees{% elif edition.phase == 'cutoff' %}Nominees and voting results{% else %}Lineup and results{% endif %}</h2>
 {% if ballot_form %}
 <form method="post" id="ballot" action="{% url 'edition' edition.year %}#ballot">
   {% csrf_token %}
@@ -53,23 +68,28 @@
     {% include "olympics/game_cover.html" with game=entry.game %}
   {% endif %}
   <h3><a href="{% url 'game' entry.game_id %}">{{ entry.title }}</a></h3>
+  {% if entry.selected and entry.awards %}
+    <p><strong>{{ entry.get_mode_display }}</strong> &ndash; {% if entry.mode == 'winner' %}first place: {{ entry.awards.0 }} points{% else %}points by place: {{ entry.awards|join:", " }}{% endif %}.</p>
+  {% endif %}
+  {% if organizer and edition.phase == 'play' and entry.selected %}
+    {% if not entry.awards %}<p>Scoring not configured.</p>{% endif %}
+    {% if not entry.scored or entry.awards or edition.historical %}
+    <nav class="game-actions" aria-label="Manage {{ entry.title }}">
+      {% if not entry.scored %}<a href="{% url 'manage-game' edition.year entry.pk 'scoring' %}">Configure scoring</a>{% endif %}
+      {% if entry.awards %}<a href="{% url 'manage-game' edition.year entry.pk 'results' %}">{% if entry.scored %}Correct results{% else %}Enter results{% endif %}</a>{% endif %}
+      {% if edition.historical %}<a href="{% url 'manage-game' edition.year entry.pk 'historical-votes' %}">Enter historical votes</a>{% endif %}
+    </nav>
+    {% endif %}
+  {% endif %}
   {% if vote %}
     <div class="vote-control">{{ vote.errors }}{{ vote.label_tag }}{{ vote }}</div>
   {% endif %}
   {% if entry.selected %}<p>Selected{% if entry.cutoff_tied %} by cutoff decision{% endif %}</p>{% elif revealed %}<p>{% if entry.cutoff_tied and edition.phase == 'cutoff' %}Tied at the cutoff{% else %}Not selected{% endif %}</p>{% endif %}
   {% if revealed %}<p>Ballot points: {{ entry.total_votes }}. Votes by rank (first onward): {{ entry.vote_breakdown|join:", " }}.</p>{% endif %}
   {% include "olympics/game_info.html" with game=entry.game %}
-  {% if entry.selected and entry.awards %}<p>{{ entry.get_mode_display }} &ndash; points by place: {{ entry.awards|join:", " }}.</p>{% endif %}
   {% include "olympics/results.html" %}
   {% if edition.historical %}
     {% if entry.historical_votes %}{{ entry.historical_votes|linebreaks }}{% else %}<p>No voting record available.</p>{% endif %}
-  {% endif %}
-  {% if organizer and edition.phase == 'play' and entry.selected %}
-    <nav aria-label="Manage {{ entry.title }}">
-      {% if not entry.scored %}<a href="{% url 'manage-game' edition.year entry.pk 'scoring' %}">Set scoring</a>{% endif %}
-      {% if entry.awards %}<a href="{% url 'manage-game' edition.year entry.pk 'results' %}">{% if entry.scored %}Correct results{% else %}Enter results{% endif %}</a>{% endif %}
-      {% if edition.historical %}<a href="{% url 'manage-game' edition.year entry.pk 'historical-votes' %}">Enter historical votes</a>{% endif %}
-    </nav>
   {% endif %}
 </article>
 {% empty %}
@@ -103,7 +123,7 @@
 </script>
 {% endif %}
 {% if revealed %}
-<section>
+<section id="revealed-ballots">
   <h2>Revealed ballots</h2>
   {% if no_ballots %}<p>No ballots were submitted.</p>{% endif %}
   {% for name, ranking in ballots %}
@@ -114,12 +134,13 @@
 </section>
 {% endif %}
 {% if edition.phase == 'play' or edition.phase == 'archived' %}
-<section>
+<section id="standings">
   <h2>Overall standings</h2>
   <table>
     <thead><tr><th scope="col">Rank</th><th scope="col">Competitor</th><th scope="col">Points</th></tr></thead>
     <tbody>{% for rank, name, points in standings %}<tr><td>{{ rank }}</td><td>{{ name }}</td><td>{{ points }}</td></tr>{% endfor %}</tbody>
   </table>
+  {% if scenario_rows %}{% include "olympics/what_if.html" %}{% endif %}
 </section>
 {% endif %}
 {% endblock %}

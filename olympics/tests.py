@@ -173,16 +173,26 @@ class EditionWorkflowTests(TestCase):
         self.assertContains(self.manage("cutoff", {"games": [first.pk], "reason": "Not eligible"}),
                             "Select a valid choice")
         self.assertEqual(self.manage("cutoff", {"games": [second.pk], "reason": "Shorter game"}).status_code, 302)
+        edition_page = self.request("edition", year=2026)
+        for section in ("standings", "game-results", "revealed-ballots"):
+            self.assertContains(edition_page, f'href="#{section}"')
+            self.assertContains(edition_page, f'id="{section}"')
+        self.assertContains(edition_page, "Configure scoring", count=2)
+        self.assertNotContains(self.request("edition", year=2026, member="Alice-voter"), "Configure scoring")
         players = list(edition.competitor_set.all())
         ranks = {str(person.pk): place for person, place in zip(players, (1, 1, 3))}
 
         def game_action(entry, action, data):
             return self.request("manage-game", data, year=2026, pk=entry.pk, action=action)
 
+        scoring = game_action(first, "scoring", None)
+        self.assertContains(scoring, "Winner takes all")
+        self.assertContains(scoring, "Placement")
         self.assertEqual(game_action(first, "scoring", {"mode": "placement", "awards": "10,6,3"}).status_code, 302)
         self.assertEqual(game_action(first, "results", ranks).status_code, 302)
         self.assertEqual(game_action(first, "scoring", {"mode": "winner", "awards": "1"}).status_code, 404)
         self.assertEqual(game_action(second, "scoring", {"mode": "winner", "awards": "5"}).status_code, 302)
+        self.assertContains(self.request("edition", year=2026), "first place: 5 points")
         self.assertContains(game_action(second, "results", {**ranks, str(players[2].pk): 2}),
                             "skipping occupied places")
         self.assertEqual(game_action(second, "results", ranks).status_code, 302)
@@ -192,6 +202,32 @@ class EditionWorkflowTests(TestCase):
         self.assertContains(history, "Alice-voter: Rank 2")
         self.assertContains(history, "Bob-voter: Unranked")
         self.assertEqual(game_action(second, "results", ranks).status_code, 404)
+
+    def test_what_if_counts_only_reachable_awards_in_remaining_selected_games(self):
+        edition, (finished, winner, placement, unknown, excluded) = self.draft(4, 5)
+        edition.phase = Edition.Phase.PLAY
+        edition.save(update_fields=["phase"])
+        finished.selected, finished.scored, finished.awards = True, True, [30]
+        finished.save()
+        finished.result_set.create(competitor=edition.competitor_set.get(name="Pat"), place=1, points=30)
+        winner.selected, winner.awards = True, [10]
+        winner.save()
+        placement.selected, placement.mode, placement.awards = True, "placement", [6, 8, 3, 99]
+        placement.save()
+        unknown.selected = True
+        unknown.save()
+        excluded.awards = [100]
+        excluded.save()
+
+        page = self.request("edition", year=2026, member="Alice-voter")
+        self.assertContains(page, 'href="#what-if"')
+        self.assertContains(page, "Up to 18 more points per player")
+        self.assertContains(page, f"<strong>Scoring not configured:</strong> {unknown.title}")
+        self.assertEqual(page.context["scenario_rows"], [(1, "Pat", 30, 48), (2, "Quinn", 0, 18), (2, "Sam", 0, 18)])
+        self.assertEqual(page.context["scenario_games"], [winner, placement])
+        edition.phase = Edition.Phase.ARCHIVED
+        edition.save(update_fields=["phase"])
+        self.assertNotContains(self.request("edition", year=2026), 'id="what-if"')
 
     def test_eight_slot_ballots_and_fewer_nominees_than_slots(self):
         create = self.request("create-edition")

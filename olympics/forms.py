@@ -119,8 +119,12 @@ class BallotForm(forms.Form):
 
 
 class ScoringForm(forms.Form):
-    mode = forms.ChoiceField(choices=Nomination.Scoring.choices)
-    awards = forms.CharField(max_length=400, help_text="Comma-separated points starting with first place, e.g. 10, 6, 3.")
+    mode = forms.ChoiceField(choices=Nomination.Scoring.choices, label="Scoring mode")
+    awards = forms.CharField(
+        max_length=400, label="Points to award",
+        help_text="Winner takes all: enter one value, e.g. 10. Placement: enter points in order "
+                  "from first place, e.g. 10, 6, 3. Places without an award get 0 points.",
+    )
 
     def clean_awards(self):
         parts = [part.strip() for part in self.cleaned_data["awards"].split(",")]

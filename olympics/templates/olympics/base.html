@@ -50,6 +50,22 @@
       background: radial-gradient(ellipse at 84% 40%, #64303b, transparent 58%), linear-gradient(110deg, #281c22, #43252e);
     }
     .hero p:last-child { margin-bottom: 0; }
+    .edition-hero {
+      grid-template-columns: minmax(0, 1fr) clamp(4rem, 12vw, 6rem);
+      padding: .8rem clamp(1rem, 3vw, 1.5rem); margin-bottom: .65rem;
+    }
+    .edition-hero h1 { font-size: clamp(1.85rem, 5vw, 3rem); margin-bottom: .35rem; }
+    .edition-hero .eyebrow { margin-bottom: .25rem; }
+    .edition-links { margin: .65rem 0 1rem; }
+    .edition-links a, .game-actions a { border: 1px solid var(--line); border-radius: .48rem; padding: .32rem .65rem; }
+    .game-actions { margin-bottom: .7rem; }
+    #what-if { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: .8rem; }
+    #what-if summary { color: var(--gold); cursor: pointer; font-weight: 700; margin-bottom: .8rem; }
+    #scenario-inputs fieldset { min-width: 0; border: 1px solid var(--line); margin: 0 0 .75rem; }
+    .scenario-fields { display: flex; flex-wrap: wrap; gap: .6rem 1rem; }
+    .scenario-fields label { display: grid; gap: .2rem; }
+    .scenario-error { color: var(--berry); margin-top: .6rem; }
+    .scenario-table { overflow-x: auto; }
     .holiday-art { display: block; width: 100%; }
     .phase, .badge { display: inline-block; border: 1px solid #987147; border-radius: 2rem; padding: .2rem .65rem; color: var(--gold); font-size: .8rem; font-weight: 700; }
     .phase--open { background: #243e30; border-color: #70967c; color: #d3efda; }

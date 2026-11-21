@@ -134,6 +134,13 @@ def render_edition(request, year):
             voter.ranking = ballot_form.ranking
             voter.save(update_fields=["ranking"])
             return redirect(f"{request.path}#ballot")
+    standings = competition.standings(edition)
+    remaining = [
+        game for game in games if game.selected and not game.scored
+    ] if edition.phase == Phase.PLAY and not edition.historical else []
+    configured = [game for game in remaining if game.awards]
+    unconfigured = [game.title for game in remaining if not game.awards]
+    points_left = sum(max(game.awards[:len(standings)], default=0) for game in configured)
     return render(request, "olympics/edition.html", {
         "edition": edition,
         "organizer": is_organizer,
@@ -148,7 +155,14 @@ def render_edition(request, year):
         "ballots": competition.revealed_ballots(edition) if revealed else [],
         "turnout": competition.turnout(edition) if is_organizer and edition.phase == Phase.OPEN else None,
         "eligible": edition.voter_set.count() if is_organizer else None,
-        "standings": competition.standings(edition),
+        "standings": standings,
+        "scenario_games": configured,
+        "scenario_unconfigured": unconfigured,
+        "scenario_points_left": points_left,
+        "scenario_places": range(1, len(standings) + 1),
+        "scenario_rows": [
+            (rank, name, total, total + points_left) for rank, name, total in standings
+        ] if remaining else [],
     })
 
 

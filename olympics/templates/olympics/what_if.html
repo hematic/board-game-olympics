@@ -1,0 +1,100 @@
+<details id="what-if" open>
+  <summary>What if? Explore remaining games</summary>
+  <p>Try hypothetical finishes. Nothing here is saved or changes the official standings.</p>
+  {% if scenario_unconfigured %}
+    <p><strong>Scoring not configured:</strong> {{ scenario_unconfigured|join:", " }}.
+      Those games are excluded, so the scores below aren't final projections.</p>
+  {% endif %}
+  <p>Up to {{ scenario_points_left }} more points per player from configured games.
+    Players can't necessarily reach their maximums together.</p>
+  {% if scenario_games %}
+    <div id="scenario-inputs" hidden>
+      <p>Leave a player unassigned to add no points for that game. For ties, skip the occupied places: 1st, 1st, 3rd.</p>
+      {% for game in scenario_games %}
+        <fieldset data-awards="{{ game.awards|join:',' }}">
+          <legend>{{ game.title }}</legend>
+          <p>{{ game.get_mode_display }} &ndash; points by place: {{ game.awards|join:", " }}.</p>
+          <div class="scenario-fields">
+            {% for rank, name, current, maximum in scenario_rows %}
+              <label>{{ name }}
+                <select>
+                  <option value="">Unassigned</option>
+                  {% for place in scenario_places %}<option value="{{ place }}">{{ place }}</option>{% endfor %}
+                </select>
+              </label>
+            {% endfor %}
+          </div>
+          <p class="scenario-error" hidden>Use consecutive places, skipping occupied places after ties (1, 1, 3).</p>
+        </fieldset>
+      {% endfor %}
+      <button type="button" id="scenario-clear">Clear hypothetical finishes</button>
+      <p id="scenario-status" role="status"></p>
+    </div>
+    <noscript><p>Enable JavaScript to try hypothetical finishes.</p></noscript>
+  {% endif %}
+  <div class="scenario-table">
+    <table>
+      <thead><tr>
+        <th scope="col">Competitor</th><th scope="col">Current points</th>
+        <th scope="col">{% if scenario_unconfigured %}Current + configured maximum{% else %}Maximum final points{% endif %}</th>
+        <th scope="col">Scenario points</th><th scope="col">Scenario rank</th>
+      </tr></thead>
+      <tbody id="scenario-standings">
+        {% for rank, name, current, maximum in scenario_rows %}
+          <tr data-current="{{ current }}"><th scope="row">{{ name }}</th><td>{{ current }}</td><td>{{ maximum }}</td><td>{{ current }}</td><td>{{ rank }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% if scenario_games %}
+<script>
+  (() => {
+    const inputs = document.getElementById("scenario-inputs");
+    const tbody = document.getElementById("scenario-standings");
+    const status = document.getElementById("scenario-status");
+    const rows = [...tbody.rows];
+    const games = [...inputs.querySelectorAll("fieldset")].map(fieldset => ({
+      awards: fieldset.dataset.awards.split(",").map(Number),
+      selects: [...fieldset.querySelectorAll("select")],
+      error: fieldset.querySelector(".scenario-error"),
+    }));
+
+    function update() {
+      const totals = rows.map(row => Number(row.dataset.current));
+      let invalid = false;
+      let entered = false;
+      for (const {awards, selects, error} of games) {
+        const places = selects.map(select => Number(select.value));
+        const assigned = places.filter(Boolean).sort((a, b) => a - b);
+        entered ||= assigned.length > 0;
+        const valid = assigned.every((place, index) => place === index + 1 || place === assigned[index - 1]);
+        error.hidden = valid;
+        invalid ||= !valid;
+        if (valid) places.forEach((place, index) => { totals[index] += awards[place - 1] ?? 0; });
+      }
+
+      const ordered = rows.map((row, index) => ({row, total: totals[index]}))
+        .sort((a, b) => b.total - a.total);
+      let rank = 1;
+      ordered.forEach(({row, total}, index) => {
+        if (index && total !== ordered[index - 1].total) rank = index + 1;
+        row.cells[3].textContent = invalid ? "\u2014" : total;
+        row.cells[4].textContent = invalid ? "\u2014" : rank;
+        if (!invalid) tbody.append(row);
+      });
+      status.textContent = invalid ? "Fix the placements shown above to see scenario standings."
+        : entered ? "Scenario updated. Only assigned finishes are counted." : "Showing current standings.";
+    }
+
+    inputs.addEventListener("change", update);
+    document.getElementById("scenario-clear").addEventListener("click", () => {
+      games.forEach(({selects}) => selects.forEach(select => { select.value = ""; }));
+      update();
+    });
+    window.addEventListener("pageshow", update);
+    inputs.hidden = false;
+    update();
+  })();
+</script>
+{% endif %}
