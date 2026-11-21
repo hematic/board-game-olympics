@@ -50,7 +50,9 @@ jobs:
                   with urllib.request.urlopen(base + "/healthz/", timeout=1) as response:
                       assert response.read() == b"ok\n"
                   break
-              except urllib.error.URLError:
+              except urllib.error.HTTPError:
+                  raise
+              except OSError:
                   if attempt == 19:
                       raise
                   time.sleep(1)

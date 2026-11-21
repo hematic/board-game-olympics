@@ -15,7 +15,7 @@ The interface uses a dark holiday theme and adapts to phones and larger screens.
    docker compose up -d
    ```
 
-   The example uses `hematic/board-game-olympics:v0.4.0`. To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
+   The example uses `hematic/board-game-olympics:v0.4.1`. To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
 
 Use the site's HTTPS URL to sign in. The SQLite database lives on the `olympics-data` Compose volume. Keep one app replica and back up the volume before upgrading. Once an active organizer with a password exists, the bootstrap settings are ignored; remove the bootstrap username and password from `.env` and recreate the container to clear them from its environment. Changing those values never resets an existing password or promotes a family account.
 
