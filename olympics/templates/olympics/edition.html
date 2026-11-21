@@ -22,7 +22,7 @@
     <a href="#game-results">Nominees</a>
   {% endif %}
   {% if revealed %}<a href="#revealed-ballots">Revealed ballots</a>{% endif %}
-  {% if organizer and edition.phase == 'play' %}<a href="#organizer-tools">Organizer tools</a>{% endif %}
+  {% if organizer %}<a href="#organizer-tools">Organizer tools</a>{% endif %}
 </nav>
 {{ edition.history_notes|linebreaks }}
 {% if organizer %}
@@ -42,6 +42,7 @@
   {% elif edition.phase == 'play' %}
     <a href="{% url 'manage-edition' edition.year 'archive' %}">Finalize and archive</a>
   {% endif %}
+    <a href="{% url 'manage-edition' edition.year 'delete' %}">Delete this year</a>
   </nav>
   {% if edition.phase == 'open' %}<p>Ballots submitted: {{ turnout }} / {{ eligible }}</p>{% endif %}
 </section>
@@ -55,6 +56,7 @@
   <div class="ballot-brief">
     <p><strong>Give {{ ballot_form.highest }} point{{ ballot_form.highest|pluralize }} to your favorite{% if ballot_form.size > 1 %} and {{ ballot_form.lowest }} point{{ ballot_form.lowest|pluralize }} to your last pick{% endif %}.</strong> Rank exactly {{ ballot_form.size }} game{{ ballot_form.size|pluralize }}, using each available point value once.</p>
     <p>You can change your ballot until voting closes. Only you can see your choices now; afterward all signed-in members can see your name and rankings.</p>
+    <p>Competition scoring is listed on each game card. If the organizer changes it, you can update your ballot while voting is open.</p>
     {% if has_saved_ballot %}
       <p role="status">{% if ballot_form.errors %}Your previously saved ballot is unchanged.{% else %}Your ballot is saved.{% endif %}</p>
     {% endif %}
@@ -68,18 +70,19 @@
     {% include "olympics/game_cover.html" with game=entry.game %}
   {% endif %}
   <h3><a href="{% url 'game' entry.game_id %}">{{ entry.title }}</a></h3>
-  {% if entry.selected and entry.awards %}
-    <p><strong>{{ entry.get_mode_display }}</strong> &ndash; {% if entry.mode == 'winner' %}first place: {{ entry.awards.0 }} points{% else %}points by place: {{ entry.awards|join:", " }}{% endif %}.</p>
+  {% if entry.awards %}
+    <p><strong>Competition scoring: {{ entry.get_mode_display }}</strong> &ndash; {% if entry.mode == 'winner' %}first place: {{ entry.awards.0 }} points{% else %}points by place: {{ entry.awards|join:", " }}{% endif %}.</p>
+  {% else %}
+    <p>Competition scoring not set yet.</p>
   {% endif %}
-  {% if organizer and edition.phase == 'play' and entry.selected %}
-    {% if not entry.awards %}<p>Scoring not configured.</p>{% endif %}
-    {% if not entry.scored or entry.awards or edition.historical %}
+  {% if organizer %}
     <nav class="game-actions" aria-label="Manage {{ entry.title }}">
-      {% if not entry.scored %}<a href="{% url 'manage-game' edition.year entry.pk 'scoring' %}">Configure scoring</a>{% endif %}
-      {% if entry.awards %}<a href="{% url 'manage-game' edition.year entry.pk 'results' %}">{% if entry.scored %}Correct results{% else %}Enter results{% endif %}</a>{% endif %}
-      {% if edition.historical %}<a href="{% url 'manage-game' edition.year entry.pk 'historical-votes' %}">Enter historical votes</a>{% endif %}
+      <a href="{% url 'manage-game' edition.year entry.pk 'scoring' %}">Configure scoring</a>
+      {% if edition.phase == 'play' and entry.selected %}
+        {% if entry.awards %}<a href="{% url 'manage-game' edition.year entry.pk 'results' %}">{% if entry.scored %}Correct results{% else %}Enter results{% endif %}</a>{% endif %}
+        {% if edition.historical %}<a href="{% url 'manage-game' edition.year entry.pk 'historical-votes' %}">Enter historical votes</a>{% endif %}
+      {% endif %}
     </nav>
-    {% endif %}
   {% endif %}
   {% if vote %}
     <div class="vote-control">{{ vote.errors }}{{ vote.label_tag }}{{ vote }}</div>

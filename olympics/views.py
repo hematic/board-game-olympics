@@ -173,7 +173,25 @@ def manage_edition(request, year, action):
     edition = get_edition(request, year)
     data = request.POST if request.method == "POST" else None
     nominees = edition.nomination_set.all()
-    if edition.phase == Phase.DRAFT and action == "setup":
+    if action == "delete":
+        form = build_form({
+            "confirmation": forms.CharField(label=f"Type {year} to confirm", max_length=len(str(year))),
+        }, data)
+        if form.is_valid():
+            if form.cleaned_data["confirmation"] != str(year):
+                form.add_error("confirmation", f"Enter {year} to delete this edition.")
+            else:
+                # Results protect competitors, so delete this edition's results before cascading.
+                Result.objects.filter(nomination__edition=edition).delete()
+                edition.delete()
+                return redirect("home")
+        return form_page(
+            request, f"Delete the {year} Olympics", form, edition=edition,
+            hint="This permanently deletes this edition's ballots, lineup, competitors, and results. "
+                 "The game catalog, accounts, and other years are kept.",
+            submit_label=f"Delete {year}",
+        )
+    elif edition.phase == Phase.DRAFT and action == "setup":
         form = build_form({
             "slots": forms.IntegerField(min_value=1, max_value=50),
             "history_notes": forms.CharField(required=False, widget=forms.Textarea),
@@ -281,17 +299,30 @@ def ballot(request, year):
 def manage_game(request, year, pk, action):
     organizer(request)
     edition = get_edition(request, year)
-    if edition.phase != Phase.PLAY:
-        raise Http404
-    game = get_object_or_404(edition.nomination_set, pk=pk, selected=True)
+    if action == "scoring":
+        game = get_object_or_404(edition.nomination_set, pk=pk)
+    else:
+        if edition.phase != Phase.PLAY:
+            raise Http404
+        game = get_object_or_404(edition.nomination_set, pk=pk, selected=True)
     data = request.POST if request.method == "POST" else None
     hint = ""
-    if action == "scoring" and not game.scored:
+    if action == "scoring":
+        hint = "These rules apply only to this edition."
+        if game.scored:
+            hint += " Saving recalculates points and standings without changing recorded placements."
+        elif edition.phase == Phase.OPEN:
+            hint += " Voters will see the new rules; existing ballots are kept and can be revised until voting closes."
         form = ScoringForm(data, initial={"mode": game.mode, "awards": ", ".join(map(str, game.awards))})
         if form.is_valid():
             game.mode = form.cleaned_data["mode"]
             game.awards = form.cleaned_data["awards"]
             game.save(update_fields=["mode", "awards"])
+            if game.scored:
+                records = list(game.result_set.all())
+                for record in records:
+                    record.points = game.points_for_place(record.place)
+                Result.objects.bulk_update(records, ["points"])
     elif action == "results" and game.awards:
         hint = "Leave a competitor blank if they did not play or their placement is unknown."
         initial = {str(record.competitor_id): record.place for record in game.result_set.all()}
@@ -301,7 +332,7 @@ def manage_game(request, year, pk, action):
             game.result_set.all().delete()
             Result.objects.bulk_create([
                 Result(nomination=game, competitor_id=int(person), place=place,
-                       points=game.awards[place - 1] if place <= len(game.awards) else 0)
+                       points=game.points_for_place(place))
                 for person, place in form.cleaned_data.items() if place is not None
             ])
             game.scored = True

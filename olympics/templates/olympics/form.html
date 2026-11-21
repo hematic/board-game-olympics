@@ -7,6 +7,6 @@
 <form method="post">
   {% csrf_token %}
   {{ form }}
-  <button type="submit">{% if form.fields %}Save{% else %}Confirm{% endif %}</button>
+  <button type="submit">{% if submit_label %}{{ submit_label }}{% elif form.fields %}Save{% else %}Confirm{% endif %}</button>
 </form>
 {% endblock %}

@@ -115,6 +115,9 @@ class Nomination(models.Model):
         return sum((self.edition.slots - index) * count
                    for index, count in enumerate(self.vote_breakdown))
 
+    def points_for_place(self, place: int) -> int:
+        return self.awards[place - 1] if 1 <= place <= len(self.awards) else 0
+
 
 class Result(models.Model):
     nomination = models.ForeignKey(Nomination, on_delete=models.CASCADE)

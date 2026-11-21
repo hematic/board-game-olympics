@@ -9,7 +9,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from . import bgg, competition
-from .models import Edition, Game, Member
+from .models import Edition, Game, Member, Result, Voter
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
@@ -177,7 +177,7 @@ class EditionWorkflowTests(TestCase):
         for section in ("standings", "game-results", "revealed-ballots"):
             self.assertContains(edition_page, f'href="#{section}"')
             self.assertContains(edition_page, f'id="{section}"')
-        self.assertContains(edition_page, "Configure scoring", count=2)
+        self.assertContains(edition_page, "Configure scoring", count=3)
         self.assertNotContains(self.request("edition", year=2026, member="Alice-voter"), "Configure scoring")
         players = list(edition.competitor_set.all())
         ranks = {str(person.pk): place for person, place in zip(players, (1, 1, 3))}
@@ -190,18 +190,71 @@ class EditionWorkflowTests(TestCase):
         self.assertContains(scoring, "Placement")
         self.assertEqual(game_action(first, "scoring", {"mode": "placement", "awards": "10,6,3"}).status_code, 302)
         self.assertEqual(game_action(first, "results", ranks).status_code, 302)
-        self.assertEqual(game_action(first, "scoring", {"mode": "winner", "awards": "1"}).status_code, 404)
         self.assertEqual(game_action(second, "scoring", {"mode": "winner", "awards": "5"}).status_code, 302)
         self.assertContains(self.request("edition", year=2026), "first place: 5 points")
         self.assertContains(game_action(second, "results", {**ranks, str(players[2].pk): 2}),
                             "skipping occupied places")
         self.assertEqual(game_action(second, "results", ranks).status_code, 302)
         self.assertEqual(competition.standings(edition), [(1, "Pat", 15), (1, "Quinn", 15), (3, "Sam", 3)])
+        self.assertEqual(game_action(first, "scoring", {"mode": "winner", "awards": "1"}).status_code, 302)
+        self.assertEqual(competition.standings(edition), [(1, "Pat", 6), (1, "Quinn", 6), (3, "Sam", 0)])
         self.assertEqual(self.manage("archive", {}).status_code, 302)
+        self.assertEqual(game_action(first, "scoring", {"mode": "placement", "awards": "4,2,1"}).status_code, 302)
+        self.assertEqual(list(first.result_set.values_list("place", "points")), [(1, 4), (1, 4), (3, 1)])
+        self.assertEqual(competition.standings(edition), [(1, "Pat", 9), (1, "Quinn", 9), (3, "Sam", 1)])
         history = self.request("game", pk=second.game_id, member="Future-member")
         self.assertContains(history, "Alice-voter: Rank 2")
         self.assertContains(history, "Bob-voter: Unranked")
         self.assertEqual(game_action(second, "results", ranks).status_code, 404)
+
+    def test_scoring_is_visible_and_editable_during_voting_without_changing_ballots(self):
+        edition, (game,) = self.draft(1, 1)
+        scoring = {"year": 2026, "pk": game.pk, "action": "scoring"}
+        self.assertContains(self.request("edition", year=2026), "Configure scoring")
+        self.assertEqual(self.request("manage-game", {"mode": "winner", "awards": "10"},
+                                      **scoring).status_code, 302)
+        self.assertEqual(self.manage("start", {}).status_code, 302)
+        voter = {"year": 2026, "member": "Alice-voter"}
+        self.assertContains(self.request("edition", **voter), "first place: 10 points")
+        self.assertEqual(self.request("edition", {f"game_{game.pk}": 1}, **voter).status_code, 302)
+        update = {"mode": "placement", "awards": "8,4,2"}
+        self.assertEqual(self.request("manage-game", update, member="Alice-voter", **scoring).status_code, 403)
+        self.assertEqual(self.request("manage-game", update, **scoring).status_code, 302)
+        ballot = self.request("edition", **voter)
+        self.assertContains(ballot, "Competition scoring: Placement")
+        self.assertContains(ballot, "points by place: 8, 4, 2")
+        self.assertContains(ballot, "Your ballot is saved.")
+        self.assertEqual(edition.voter_set.get(member__user__username="Alice-voter").ranking, [game.pk])
+
+    def test_delete_archived_edition_requires_organizer_and_matching_year(self):
+        edition, (game,) = self.draft(1, 1)
+        edition.phase = Edition.Phase.ARCHIVED
+        edition.save(update_fields=["phase"])
+        voter = edition.voter_set.first()
+        voter.ranking = [game.pk]
+        voter.save(update_fields=["ranking"])
+        result = game.result_set.create(competitor=edition.competitor_set.first(), place=1, points=5)
+        other = Edition.objects.create(year=2027, slots=1)
+        other_game = other.nomination_set.create(game=game.game, title=game.title)
+        other_result = other_game.result_set.create(
+            competitor=other.competitor_set.create(name="Pat"), place=1, points=9,
+        )
+
+        self.assertNotContains(self.request("edition", year=2026, member="Alice-voter"), "Delete this year")
+        self.assertContains(self.manage("delete", None), "Type 2026 to confirm")
+        self.assertEqual(self.request("manage-edition", {"confirmation": "2026"}, year=2026,
+                                      action="delete", member="Alice-voter").status_code, 403)
+        self.assertContains(self.manage("delete", {"confirmation": "2027"}), "Enter 2026 to delete")
+        self.assertTrue(Result.objects.filter(pk=result.pk).exists())
+        self.assertRedirects(self.manage("delete", {"confirmation": "2026"}),
+                             reverse("home"), fetch_redirect_response=False)
+        self.assertFalse(Edition.objects.filter(year=2026).exists())
+        self.assertFalse(Voter.objects.filter(pk=voter.pk).exists())
+        self.assertFalse(Result.objects.filter(pk=result.pk).exists())
+        self.assertTrue(Result.objects.filter(pk=other_result.pk, points=9).exists())
+        self.assertTrue(Game.objects.filter(pk=game.game_id).exists())
+        self.assertTrue(Member.objects.filter(pk=voter.member_id, user__isnull=False).exists())
+        self.assertEqual(self.request("create-edition", {"year": 2026, "slots": 1}).status_code, 302)
 
     def test_what_if_counts_only_reachable_awards_in_remaining_selected_games(self):
         edition, (finished, winner, placement, unknown, excluded) = self.draft(4, 5)

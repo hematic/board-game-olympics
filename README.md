@@ -15,7 +15,7 @@ The interface uses a dark holiday theme and adapts to phones and larger screens.
    docker compose up -d
    ```
 
-   The example uses `hematic/board-game-olympics:v0.5.0`. To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
+   The example uses `hematic/board-game-olympics:v0.6.0`. To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
 
 Use the site's HTTPS URL to sign in. The SQLite database lives on the `olympics-data` Compose volume. Keep one app replica and back up the volume before upgrading. Once an active organizer with a password exists, the bootstrap settings are ignored; remove the bootstrap username and password from `.env` and recreate the container to clear them from its environment. Changing those values never resets an existing password or promotes a family account.
 
@@ -47,10 +47,14 @@ Sign in as the organizer and open **Accounts** to create a username and initial 
 
 1. Add games manually from **Game catalog**, or search BoardGameGeek if a token is configured. Add YouTube rules links under **Edit game**.
    To show box art, set **Box art image URL** to a direct HTTPS image you have permission to display. The browser loads covers from their source; the app does not download them.
-2. Create the year's edition and set the number of lineup slots (8 by default). Add accounts to the voter roster; they don't need to sign in first. Add competitors separately and choose the nominees.
+2. Create the year's edition and set the number of lineup slots (8 by default). Add accounts to the voter roster; they don't need to sign in first. Add competitors separately and choose the nominees. Use **Configure scoring** on each nominee card to choose **Winner takes all** (one award) or **Placement** (points from first place onward, such as `10, 6, 3`). These rules apply to this year only and are visible to voters on the nominee cards.
 3. Open voting. Voters assign points next to each game on the edition page and select **Save ballot**. With the default 8 slots and at least 8 nominees, rank eight distinct games: give 8 points to your favorite, 7 to your next choice, down to 1 for your last pick. Each point value is available for only one game at a time; set a game to **Unranked** to free up its points. The top eight games make the lineup. With fewer nominees than slots, rank all nominees starting at the slot count. Voters can replace their ballot before close. Organizers only see turnout, not ballots or interim totals. Database and backup operators are trusted and can read stored ballots.
 4. Close voting to reveal named ballots to all signed-in members. The app picks the highest totals, comparing counts at each rank in order when tied. If a tie still crosses the cutoff, choose among just the tied games and record a reason.
-5. Once the lineup is final, select **Configure scoring** on each selected game's card. Choose **Winner takes all** and enter one award, or **Placement** and enter points from first place onward (e.g. `10, 6, 3`). Then record placements; the scoring rules lock after results are first saved. Shared placements get the same full award, and the next occupied place is skipped (1st, 1st, 3rd). Use the edition's quick links to jump to per-game results or overall standings. Finalize the edition when play finishes.
+5. Once the lineup is final, record placements for each selected game. Shared placements get the same full award, and the next occupied place is skipped (1st, 1st, 3rd). Use the edition's quick links to jump to per-game results or overall standings. Finalize the edition when play finishes.
+
+Organizers can change scoring in any phase, including during voting and after archiving. Changes leave ballots and placements intact and recalculate any recorded points and overall standings. If you change rules during voting, let voters know so they can revise their ballots.
+
+Use **Organizer tools → Delete this year** and type the year to permanently remove an edition, including its ballots, lineup, competitors, and results. This also works for archived years. The game catalog, accounts, and other years are kept.
 
 To enter a past Olympics, check **Historical** when creating the edition. Enter its known lineup, competitors, placements, and voting records without opening a new vote. Leave missing results or votes blank and note any partial records.
 
