@@ -6,32 +6,32 @@ The interface uses a dark holiday theme and adapts to phones and larger screens.
 
 ## Run the app
 
-1. Copy [.env.example](.env.example) to `.env`. Set the site's hostname and supply a strong secret (generate one with `python -c 'import secrets; print(secrets.token_urlsafe(64))'`).
-2. Attach your HTTPS reverse proxy to a dedicated Docker network (`docker network create olympics-proxy` with the example defaults) and name that network in `.env`. For BoardGameGeek imports, [register the application](https://boardgamegeek.com/using_the_xml_api) and set `BGG_API_TOKEN`. You can still add games manually without a token.
-3. Set `OLYMPICS_IMAGE=hematic/board-game-olympics:v0.3.0` in `.env`, then pull the image, migrate the database, and create the first organizer. The command prompts for a username and password; leave the email blank.
+1. Copy [.env.example](.env.example) to `.env`. Set `DJANGO_ALLOWED_HOSTS` to the public hostname and `DJANGO_SECRET_KEY` to a strong random secret (for example, generate one with `openssl rand -hex 32`). Set `OLYMPICS_ORGANIZER_USERNAME` and `OLYMPICS_ORGANIZER_PASSWORD` for the first organizer. Keep `.env` private; single-quote passwords containing `$` to avoid Compose interpolation.
+2. Configure your HTTPS reverse proxy as described below. For BoardGameGeek imports, [register the application](https://boardgamegeek.com/using_the_xml_api) and set `BGG_API_TOKEN`. You can still add games manually without a token.
+3. Pull and start the app. It applies database migrations and creates the first organizer automatically. No management commands are needed.
 
    ```sh
    docker compose pull app
-   docker compose run --rm app python manage.py migrate --noinput
-   docker compose run --rm app python manage.py createsuperuser
    docker compose up -d
    ```
 
-   To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
+   The example uses `hematic/board-game-olympics:v0.4.0`. To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
 
-Use the site's HTTPS URL to sign in. The SQLite database lives on the `olympics-data` Compose volume. Keep one app replica and back up the volume before upgrading. Run the migration command with the new image before starting it.
+Use the site's HTTPS URL to sign in. The SQLite database lives on the `olympics-data` Compose volume. Keep one app replica and back up the volume before upgrading. Once an active organizer with a password exists, the bootstrap settings are ignored; remove the bootstrap username and password from `.env` and recreate the container to clear them from its environment. Changing those values never resets an existing password or promotes a family account.
 
 Migrations seed an 18-game starter catalog with player counts, playtimes, rules videos, and box-art links where available. Existing matches by title are left untouched. No demo accounts, editions, or ballots are included. Cover images still load from their external hosts. Edits made in a running app stay in its data volume; they do not change the bundled starter catalog.
 
 ### HTTPS reverse proxy
 
-**Only the HTTPS proxy should be able to connect to the app container.** Do not publish the app port or put untrusted containers on its network. The app uses its own sign-in and trusts the proxy to set `X-Forwarded-Proto`; no identity headers or external authentication service are needed. For internet-facing deployments, configure login rate limiting at your proxy or edge.
+Compose publishes `127.0.0.1:8000` by default, for a proxy running directly on the app host. Set `OLYMPICS_PORT` to change the host port. For Traefik or another proxy on a different host, set `OLYMPICS_BIND_ADDRESS` to the app host's private IP and point the proxy at `http://<app-host-private-ip>:<OLYMPICS_PORT>`. No shared Docker network is required. If upgrading from the old shared-network Compose setup, update the proxy upstream instead of using `olympics-web`.
 
-For example, with Caddy serving HTTPS and connected to the app's proxy network:
+**Restrict the published port to the trusted proxy** using network/firewall rules that apply to Docker-published ports. The backend is HTTP, so use a trusted private network or encrypted tunnel between hosts. Keep HTTPS on the public side, preserve the public `Host`, and have the proxy set `X-Forwarded-Proto: https`; the app trusts that header. Do not expose the backend directly to the internet. Configure login rate limiting at your proxy or edge.
+
+For example, with Caddy running directly on the app host:
 
 ```caddyfile
 olympics.example.com {
-    reverse_proxy olympics-web:8000 {
+    reverse_proxy 127.0.0.1:8000 {
         header_up X-Forwarded-Proto https
     }
 }
@@ -41,7 +41,7 @@ olympics.example.com {
 
 Sign in as the organizer and open **Accounts** to create a username and initial password for each family member. Share their credentials privately. There is no public signup or email requirement. Family members can change their own password; the organizer can reset family passwords from **Accounts**.
 
-**Upgrading from Pocket ID/Tinyauth:** Back up the data volume, migrate, and bootstrap an organizer as above. Remove the old proxy authentication rule and the `POCKET_ID_ISSUER` and `OLYMPICS_ORGANIZER_SUBJECTS` settings. Existing ballots and scores stay in the database. When creating a local account, select that person's old profile under **Link an existing member** to retain their voting history and existing voter roster entries. The old proxy logins no longer work.
+**Upgrading from Pocket ID/Tinyauth:** Back up and keep the data volume. Set the organizer bootstrap variables before starting the new container. Remove the old proxy authentication rule and the `POCKET_ID_ISSUER` and `OLYMPICS_ORGANIZER_SUBJECTS` settings. Existing ballots and scores stay in the database. When creating a local account, select that person's old profile under **Link an existing member** to retain their voting history and existing voter roster entries. The old proxy logins no longer work.
 
 ## Running an edition
 

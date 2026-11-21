@@ -1,6 +1,7 @@
 **
 !requirements.txt
 !manage.py
+!docker-entrypoint.sh
 !olympics/
 !olympics/**
 olympics/**/__pycache__/

@@ -1,12 +1,47 @@
+from io import StringIO
 from unittest.mock import patch
 from xml.etree import ElementTree
 
 from django.contrib.auth.models import User
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from . import bgg, competition
 from .models import Edition, Game, Member
+
+
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
+class OrganizerBootstrapTests(TestCase):
+    def bootstrap(self, username="", password=""):
+        with patch.dict("os.environ", {
+            "OLYMPICS_ORGANIZER_USERNAME": username,
+            "OLYMPICS_ORGANIZER_PASSWORD": password,
+        }):
+            call_command("bootstrap_organizer", stdout=StringIO())
+
+    def test_creates_first_organizer_without_overwriting_on_restart(self):
+        self.bootstrap("host", "initial-family-passphrase")
+        self.bootstrap("another-host", "changed-family-passphrase")
+        self.bootstrap()
+        organizer = User.objects.get()
+        self.assertEqual(organizer.username, "host")
+        self.assertTrue(organizer.is_active and organizer.is_superuser)
+        self.assertTrue(organizer.check_password("initial-family-passphrase"))
+
+    def test_missing_weak_or_colliding_credentials_do_not_create_an_organizer(self):
+        with self.assertRaisesMessage(CommandError, "Set OLYMPICS_ORGANIZER_USERNAME"):
+            self.bootstrap("host")
+        with self.assertRaisesMessage(CommandError, "Invalid organizer credentials"):
+            self.bootstrap("host", "123")
+        family = User.objects.create_user("family", password="previous-family-passphrase")
+        with self.assertRaisesMessage(CommandError, "Invalid organizer credentials"):
+            self.bootstrap("FAMILY", "changed-family-passphrase")
+        family.refresh_from_db()
+        self.assertFalse(family.is_superuser)
+        self.assertTrue(family.check_password("previous-family-passphrase"))
+        self.assertEqual(User.objects.count(), 1)
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])

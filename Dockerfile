@@ -10,6 +10,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt \
     && install -d -o 10001 -g 10001 -m 0700 /data
 
 COPY manage.py .
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/olympics-entrypoint
 COPY olympics/ olympics/
 
 USER 10001:10001
@@ -17,3 +18,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=2).close()"]
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--forwarded-allow-ips=", "olympics.wsgi:application"]
+ENTRYPOINT ["olympics-entrypoint"]

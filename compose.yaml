@@ -4,19 +4,14 @@ services:
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?Set DJANGO_ALLOWED_HOSTS}
+      OLYMPICS_ORGANIZER_USERNAME: ${OLYMPICS_ORGANIZER_USERNAME:-}
+      OLYMPICS_ORGANIZER_PASSWORD: ${OLYMPICS_ORGANIZER_PASSWORD:-}
       BGG_API_TOKEN: ${BGG_API_TOKEN:-}
+    ports:
+      - "${OLYMPICS_BIND_ADDRESS:-127.0.0.1}:${OLYMPICS_PORT:-8000}:8000"
     volumes:
       - olympics-data:/data
-    networks:
-      proxy:
-        aliases:
-          - olympics-web
     restart: unless-stopped
 
 volumes:
   olympics-data:
-
-networks:
-  proxy:
-    external: true
-    name: ${OLYMPICS_PROXY_NETWORK:?Set OLYMPICS_PROXY_NETWORK}

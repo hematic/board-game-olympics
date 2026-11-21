@@ -32,18 +32,19 @@ jobs:
       - name: Smoke-test image and database volume
         run: |
           docker volume create olympics-ci-data
-          docker run --rm --env DJANGO_SECRET_KEY \
-            --volume olympics-ci-data:/data olympics-ci python manage.py migrate --noinput
-          docker run --rm --env DJANGO_SECRET_KEY --env DJANGO_SUPERUSER_EMAIL= \
-            --volume olympics-ci-data:/data olympics-ci python manage.py createsuperuser --noinput --username ci-organizer
+          export OLYMPICS_ORGANIZER_PASSWORD="$(openssl rand -hex 24)"
           docker run --detach --name olympics-ci --env DJANGO_SECRET_KEY \
+            --env OLYMPICS_ORGANIZER_USERNAME=ci-organizer --env OLYMPICS_ORGANIZER_PASSWORD \
+            --publish 127.0.0.1::8000 \
             --volume olympics-ci-data:/data olympics-ci
-          docker exec -i olympics-ci python - <<'PY'
+          export OLYMPICS_CI_ENDPOINT="$(docker port olympics-ci 8000/tcp)"
+          python - <<'PY'
+          import os
           import time
           import urllib.error
           import urllib.request
 
-          base = "http://127.0.0.1:8000"
+          base = f"http://{os.environ['OLYMPICS_CI_ENDPOINT']}"
           for attempt in range(20):
               try:
                   with urllib.request.urlopen(base + "/healthz/", timeout=1) as response:
@@ -61,6 +62,8 @@ jobs:
               assert response.geturl().startswith(base + "/login/")
               assert b"Use the username and password your organizer gave you." in response.read()
           PY
+          docker exec olympics-ci python manage.py shell -c \
+            'import os; from django.contrib.auth import authenticate; user = authenticate(username="ci-organizer", password=os.environ["OLYMPICS_ORGANIZER_PASSWORD"]); assert user and user.is_superuser'
       - name: Verify SQLite backup restores to a fresh volume
         run: |
           docker exec olympics-ci python -c 'import sqlite3; source = sqlite3.connect("file:/data/olympics.sqlite3?mode=ro", uri=True); target = sqlite3.connect("/tmp/backup.sqlite3"); source.backup(target); target.close(); source.close()'
