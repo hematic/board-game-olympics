@@ -2,19 +2,25 @@
 
 An invite-only, self-hosted site for an annual board game competition. Organizers build a ballot from the game catalog, players rank their choices privately, and everyone can browse results and past editions after the event.
 
+The interface uses a dark holiday theme and adapts to phones and larger screens.
+
 ## Run the app
 
 1. Copy [.env.example](.env.example) to `.env`. Set the site's hostname and the Pocket ID issuer, and supply a strong secret (generate one with `python -c 'import secrets; print(secrets.token_urlsafe(64))'`). Set `OLYMPICS_ORGANIZER_SUBJECTS` to a comma-separated list of organizer Pocket ID `sub` values, not usernames or emails.
 2. Set up [Pocket ID in Tinyauth](https://tinyauth.app/docs/guides/pocket-id/) and restrict this app to your invited Pocket ID group. Attach the reverse proxy to a Docker network dedicated to this app (`docker network create olympics-proxy` with the example defaults), name that network in `.env`, and forward the authenticated `Remote-Sub` and `Remote-Name` headers. See the example below. For BoardGameGeek imports, [register the application](https://boardgamegeek.com/using_the_xml_api) and set `BGG_API_TOKEN`. You can still add games manually without a token.
-3. Build the image locally until the first release is published:
+3. Set `OLYMPICS_IMAGE=hematic/board-game-olympics:v0.2.0` in `.env`, then pull and start the published image:
 
    ```sh
-   docker build -t board-game-olympics:local .
+   docker compose pull app
    docker compose run --rm app python manage.py migrate --noinput
    docker compose up -d
    ```
 
+   To build from source instead, leave `OLYMPICS_IMAGE` unset and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
+
 Use the site's HTTPS URL to sign in. The SQLite database lives on the `olympics-data` Compose volume. Keep one app replica and back up the volume before upgrading. Run the migration command with the new image before starting it.
+
+Migrations seed an 18-game starter catalog with player counts, playtimes, rules videos, and box-art links where available. Existing matches by title are left untouched. No demo accounts, editions, or ballots are included. Cover images still load from their external hosts. Edits made in a running app stay in its data volume; they do not change the bundled starter catalog.
 
 ### Reverse proxy boundary
 
@@ -44,9 +50,10 @@ Apply the invite-only Tinyauth access policy to this hostname, and check that in
 
 ## Running an edition
 
-1. Add games from **Game catalog**, either by searching BoardGameGeek or entering them manually. Add YouTube rules links under **Edit game**.
-2. Create the year's edition and set the number of lineup slots. Invitees must sign in once before you can add them to the voter roster. Add competitors separately and choose the nominees.
-3. Open voting. Each ballot ranks exactly as many games as there are slots or nominees, whichever is smaller. With 10 slots, ranks award 10, 9, 8, and so on. Voters can replace their ballot before close. Organizers only see turnout, not ballots or interim totals. Database and backup operators are trusted and can read stored ballots.
+1. Add games manually from **Game catalog**, or search BoardGameGeek if a token is configured. Add YouTube rules links under **Edit game**.
+   To show box art, set **Box art image URL** to a direct HTTPS image you have permission to display. The browser loads covers from their source; the app does not download them.
+2. Create the year's edition and set the number of lineup slots (8 by default). Invitees must sign in once before you can add them to the voter roster. Add competitors separately and choose the nominees.
+3. Open voting. Voters assign points next to each game on the edition page and select **Save ballot**. With the default 8 slots and at least 8 nominees, rank eight distinct games: give 8 points to your favorite, 7 to your next choice, down to 1 for your last pick. Each point value is available for only one game at a time; set a game to **Unranked** to free up its points. The top eight games make the lineup. With fewer nominees than slots, rank all nominees starting at the slot count. Voters can replace their ballot before close. Organizers only see turnout, not ballots or interim totals. Database and backup operators are trusted and can read stored ballots.
 4. Close voting to reveal named ballots to all signed-in members. The app picks the highest totals, comparing counts at each rank in order when tied. If a tie still crosses the cutoff, choose among just the tied games and record a reason.
 5. Set scoring before each game, then record placements. Shared placements get the same full award, and the next occupied place is skipped (1st, 1st, 3rd). Standings update automatically. Finalize the edition when play finishes.
 

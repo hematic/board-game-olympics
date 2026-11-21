@@ -1,11 +1,17 @@
 {% extends "olympics/base.html" %}
 {% block title %}{{ edition.year }} Olympics{% endblock %}
 {% block content %}
-<h1>{{ edition.year }} Olympics</h1>
-<p>{{ edition.get_phase_display }}{% if edition.historical %} (historical entry){% endif %}</p>
+<div class="hero">
+  <div>
+    <p class="eyebrow">The holiday games</p>
+    <h1>{{ edition.year }} Olympics</h1>
+    <p><span class="phase phase--{{ edition.phase }}">{{ edition.get_phase_display }}</span>{% if edition.historical %} <span class="badge">Historical entry</span>{% endif %}</p>
+  </div>
+  {% include "olympics/holiday_art.html" %}
+</div>
 {{ edition.history_notes|linebreaks }}
 {% if organizer %}
-<section>
+<section class="organizer-panel">
   <h2>Organizer tools</h2>
   <nav aria-label="Edition management">
   {% if edition.phase == 'draft' %}
@@ -25,13 +31,31 @@
   {% if edition.phase == 'open' %}<p>Ballots submitted: {{ turnout }} / {{ eligible }}</p>{% endif %}
 </section>
 {% endif %}
-{% if can_vote %}<p><a href="{% url 'ballot' edition.year %}">Submit or edit your ballot</a></p>{% endif %}
 {% if edition.phase == 'cutoff' %}<p>The final lineup is pending an organizer decision at the cutoff.</p>{% endif %}
 {% if edition.cutoff_reason %}<p><strong>Cutoff decision:</strong> {{ edition.cutoff_reason }}</p>{% endif %}
-<h2>{% if edition.phase == 'open' or edition.phase == 'draft' %}Nominees{% else %}Lineup and results{% endif %}</h2>
-{% for entry in games %}
+<h2 class="section-heading">{% if edition.phase == 'open' or edition.phase == 'draft' %}Nominees{% else %}Lineup and results{% endif %}</h2>
+{% if ballot_form %}
+<form method="post" id="ballot" action="{% url 'edition' edition.year %}#ballot">
+  {% csrf_token %}
+  <div class="ballot-brief">
+    <p><strong>Give {{ ballot_form.highest }} point{{ ballot_form.highest|pluralize }} to your favorite{% if ballot_form.size > 1 %} and {{ ballot_form.lowest }} point{{ ballot_form.lowest|pluralize }} to your last pick{% endif %}.</strong> Rank exactly {{ ballot_form.size }} game{{ ballot_form.size|pluralize }}, using each available point value once.</p>
+    <p>You can change your ballot until voting closes. Only you can see your choices now; afterward all signed-in members can see your name and rankings.</p>
+    {% if has_saved_ballot %}
+      <p role="status">{% if ballot_form.errors %}Your previously saved ballot is unchanged.{% else %}Your ballot is saved.{% endif %}</p>
+    {% endif %}
+    {{ ballot_form.non_field_errors }}
+  </div>
+{% endif %}
+<div class="game-grid">
+{% for entry, vote in game_rows %}
 <article>
+  {% if entry.game.cover_url %}
+    {% include "olympics/game_cover.html" with game=entry.game %}
+  {% endif %}
   <h3><a href="{% url 'game' entry.game_id %}">{{ entry.title }}</a></h3>
+  {% if vote %}
+    <div class="vote-control">{{ vote.errors }}{{ vote.label_tag }}{{ vote }}</div>
+  {% endif %}
   {% if entry.selected %}<p>Selected{% if entry.cutoff_tied %} by cutoff decision{% endif %}</p>{% elif revealed %}<p>{% if entry.cutoff_tied and edition.phase == 'cutoff' %}Tied at the cutoff{% else %}Not selected{% endif %}</p>{% endif %}
   {% if revealed %}<p>Ballot points: {{ entry.total_votes }}. Votes by rank (first onward): {{ entry.vote_breakdown|join:", " }}.</p>{% endif %}
   {% include "olympics/game_info.html" with game=entry.game %}
@@ -51,10 +75,37 @@
 {% empty %}
 <p>No games yet.</p>
 {% endfor %}
+</div>
+{% if ballot_form %}
+  <div class="ballot-actions">
+    <button type="submit">Save ballot</button>
+    <p>Your choices are private until voting closes.</p>
+  </div>
+</form>
+<script>
+  (() => {
+    const ballot = document.getElementById("ballot");
+    const selectors = [...ballot.querySelectorAll(".vote-control select")];
+
+    function syncPointChoices() {
+      const assigned = new Set(selectors.map(select => select.value));
+      for (const select of selectors) {
+        for (const option of select.options) {
+          option.disabled = option.value !== "" && !option.selected && assigned.has(option.value);
+        }
+      }
+    }
+
+    ballot.addEventListener("change", syncPointChoices);
+    window.addEventListener("pageshow", syncPointChoices);
+    syncPointChoices();
+  })();
+</script>
+{% endif %}
 {% if revealed %}
 <section>
   <h2>Revealed ballots</h2>
-  {% if not ballots or not games.0.total_votes %}<p>No ballots were submitted.</p>{% endif %}
+  {% if no_ballots %}<p>No ballots were submitted.</p>{% endif %}
   {% for name, ranking in ballots %}
     <h3>{{ name }}</h3>
     {% if ranking %}<ol>{% for title, points in ranking %}<li>{{ title }}: {{ points }} points</li>{% endfor %}</ol>

@@ -26,6 +26,7 @@ class Member(models.Model):
 class Game(models.Model):
     title = models.CharField(max_length=255)
     bgg_id = models.PositiveIntegerField(null=True, blank=True, unique=True)
+    wikidata_id = models.CharField(max_length=16, null=True, blank=True, unique=True)
     year = models.PositiveSmallIntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
     notes = models.TextField(blank=True)
@@ -33,6 +34,7 @@ class Game(models.Model):
     max_players = models.PositiveSmallIntegerField(null=True, blank=True)
     playing_time = models.PositiveSmallIntegerField(null=True, blank=True)
     video_url = models.URLField(blank=True)
+    cover_url = models.URLField(max_length=1000, blank=True)
 
     class Meta:
         ordering = ["title", "pk"]

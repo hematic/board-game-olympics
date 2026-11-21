@@ -7,6 +7,11 @@ from .models import Edition, Game, Nomination
 
 
 class EditionForm(forms.ModelForm):
+    slots = forms.IntegerField(
+        initial=8,
+        help_text="Sets both how many games make the lineup and the highest ballot point value.",
+    )
+
     class Meta:
         model = Edition
         fields = ["year", "slots", "historical", "history_notes"]
@@ -22,8 +27,18 @@ class EditionForm(forms.ModelForm):
 class GameForm(forms.ModelForm):
     class Meta:
         model = Game
-        fields = ["title", "year", "notes", "min_players", "max_players", "playing_time", "video_url"]
-        labels = {"playing_time": "Listed playing time (minutes)", "video_url": "YouTube rules video"}
+        fields = ["title", "year", "notes", "min_players", "max_players", "playing_time", "video_url", "cover_url"]
+        labels = {"playing_time": "Listed playing time (minutes)", "video_url": "YouTube rules video",
+                  "cover_url": "Box art image URL"}
+        help_texts = {"cover_url": "Use a direct HTTPS image link you have permission to display."}
+
+    def clean_cover_url(self):
+        url = self.cleaned_data["cover_url"]
+        if url:
+            parts = urlsplit(url)
+            if parts.scheme != "https" or parts.username is not None:
+                raise forms.ValidationError("Enter an HTTPS image URL without credentials.")
+        return url
 
     def clean_video_url(self):
         url = self.cleaned_data["video_url"]
@@ -50,19 +65,45 @@ class GameForm(forms.ModelForm):
         return data
 
 
+class WikidataGameForm(GameForm):
+    class Meta(GameForm.Meta):
+        fields = ["title", "year", "description", *GameForm.Meta.fields[2:]]
+
+
 class BallotForm(forms.Form):
-    def __init__(self, nominations, slots, *args, **kwargs):
+    def __init__(self, nominations, slots, ranking, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        choices = [("", "Choose a game"), *((str(game.pk), game.title) for game in nominations)]
-        for index in range(min(slots, len(nominations))):
-            self.fields[f"rank_{index + 1}"] = forms.TypedChoiceField(
-                label=f"Rank {index + 1} ({slots - index} points)", choices=choices, coerce=int
+        self.size = min(slots, len(nominations))
+        self.highest = slots
+        self.lowest = slots - self.size + 1
+        choices = [("", "Unranked")] + [
+            (points, f"{points} {'point' if points == 1 else 'points'}")
+            for points in range(self.highest, self.lowest - 1, -1)
+        ]
+        saved = {game_id: slots - index for index, game_id in enumerate(ranking or [])}
+        self.game_ids = {}
+        for game in nominations:
+            name = self.field_name(game.pk)
+            self.game_ids[name] = game.pk
+            self.fields[name] = forms.TypedChoiceField(
+                label=f"Vote points for {game.title}", choices=choices, coerce=int,
+                required=False, initial=saved.get(game.pk),
             )
+
+    @staticmethod
+    def field_name(game_id):
+        return f"game_{game_id}"
 
     def clean(self):
         data = super().clean()
-        if not self.errors and len(set(data.values())) != len(self.fields):
-            raise forms.ValidationError("Rank each game only once.")
+        if self.errors:
+            return data
+        assigned = [(points, self.game_ids[name]) for name, points in data.items() if points != ""]
+        if len({points for points, _ in assigned}) != len(assigned):
+            raise forms.ValidationError("Use each point value only once.")
+        if len(assigned) != self.size:
+            raise forms.ValidationError(f"Assign points to exactly {self.size} games.")
+        self.ranking = [game_id for _, game_id in sorted(assigned, reverse=True)]
         return data
 
 

@@ -3,25 +3,125 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101914">
   <title>{% block title %}Board Game Olympics{% endblock %}</title>
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
-    body { max-width: 62rem; margin: auto; padding: 1rem; }
-    nav { display: flex; flex-wrap: wrap; gap: .75rem; align-items: baseline; }
-    section, article { border: 1px solid GrayText; border-radius: .6rem; padding: 1rem; margin: 1rem 0; }
-    section > :first-child, article > :first-child { margin-top: 0; }
+    :root {
+      color-scheme: dark;
+      --night: #101914;
+      --panel: #19251e;
+      --line: #405248;
+      --cream: #f7ead7;
+      --muted: #becac0;
+      --gold: #efc986;
+      --berry: #eaa5a9;
+      --display: Georgia, serif;
+      font: 1rem/1.55 system-ui, sans-serif;
+      background: var(--night);
+      color: var(--cream);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; background: radial-gradient(ellipse at 50% 0, #26352a, transparent 70svh); }
+    a { color: var(--gold); text-underline-offset: .22em; }
+    a:hover { color: var(--cream); }
+    :focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+    .wrap { width: min(72rem, calc(100% - 2rem)); margin-inline: auto; }
+    .masthead { background: #101914; border-bottom: 1px solid var(--line); }
+    nav { display: flex; flex-wrap: wrap; gap: .65rem 1rem; align-items: center; }
+    .masthead nav { min-height: 4.5rem; justify-content: space-between; padding-block: .6rem; }
+    .brand { display: inline-flex; gap: .65rem; align-items: center; color: var(--cream); font: 700 1.16rem/1.2 var(--display); text-decoration: none; }
+    .brand-mark { display: grid; width: 2.25rem; height: 2.25rem; place-items: center; border: 1px solid #977144; border-radius: .55rem; background: #4a282f; color: var(--gold); }
+    .nav-link { color: var(--muted); font-size: .9rem; }
+    main { padding-block: clamp(1.25rem, 3vw, 2.5rem) 4rem; overflow-wrap: anywhere; }
+    .footer { border-top: 1px solid var(--line); padding-block: 1.35rem; color: var(--muted); font-size: .8rem; }
+    .footer span { color: var(--gold); margin-right: .4rem; }
+    h1, h2, h3 { font-family: var(--display); line-height: 1.12; }
+    h1 { font-size: clamp(2.4rem, 6vw, 4.1rem); margin: 0 0 .65rem; letter-spacing: -.035em; }
+    h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin: 0 0 .75rem; }
+    h3 { font-size: 1.4rem; margin: 0 0 .65rem; }
+    h3 a { text-decoration: none; }
+    h3 a:hover { text-decoration: underline; }
+    p { margin: 0 0 .85rem; }
+    .eyebrow { color: var(--gold); font-size: .73rem; font-weight: 750; letter-spacing: .16em; text-transform: uppercase; }
+    .hero {
+      display: grid; grid-template-columns: minmax(0, 1fr) clamp(9rem, 24vw, 16rem); gap: 1rem;
+      align-items: center; border: 1px solid #815458; border-radius: 1rem; margin-bottom: 1.35rem;
+      padding: clamp(1.25rem, 4vw, 2.75rem);
+      background: radial-gradient(ellipse at 84% 40%, #64303b, transparent 58%), linear-gradient(110deg, #281c22, #43252e);
+    }
+    .hero p:last-child { margin-bottom: 0; }
+    .holiday-art { display: block; width: 100%; }
+    .phase, .badge { display: inline-block; border: 1px solid #987147; border-radius: 2rem; padding: .2rem .65rem; color: var(--gold); font-size: .8rem; font-weight: 700; }
+    .phase--open { background: #243e30; border-color: #70967c; color: #d3efda; }
+    section, article, .ballot-brief { border: 1px solid var(--line); border-radius: .8rem; padding: clamp(1rem, 2.5vw, 1.4rem); margin: 1rem 0; background: var(--panel); }
+    section > :last-child, article > :last-child, .ballot-brief > :last-child { margin-bottom: 0; }
+    .organizer-panel { background: #18251f; }
+    .organizer-panel h2 { font: 750 .8rem/1.3 system-ui, sans-serif; color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+    .organizer-panel nav a { border: 1px solid var(--line); border-radius: .48rem; padding: .32rem .65rem; font-size: .87rem; }
+    .organizer-panel nav + p { margin-top: .75rem; color: var(--muted); font-size: .9rem; }
+    .section-heading { margin-top: 1.55rem; }
+    .game-grid, .edition-list { display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); margin: .75rem 0 1rem; }
+    .game-grid article, .edition-list article { margin: 0; }
+    .game-grid article { background: linear-gradient(150deg, #202f26, var(--panel) 70%); }
+    .game-grid article p { color: var(--muted); }
+    .game-cover {
+      display: grid; place-items: center; position: relative; overflow: hidden;
+      height: clamp(9rem, 26vw, 13rem); border-radius: .55rem;
+      background: radial-gradient(ellipse at 50% 35%, #483139, #202923 75%);
+      border: 1px solid var(--line); margin-bottom: .85rem;
+    }
+    .game-cover svg { width: 3.5rem; color: var(--gold); opacity: .65; }
+    .game-cover img { position: absolute; inset: .5rem; width: calc(100% - 1rem); height: calc(100% - 1rem); object-fit: contain; }
+    .game-cover:has(img:not([hidden])) svg { visibility: hidden; }
+    .game-cover:has(img) { background-color: #242824; }
+    .catalog-card-link { display: block; text-decoration: none; }
+    .catalog-card-link:hover h2 { text-decoration: underline; }
+    .catalog-card h2 { font-size: 1.4rem; margin-bottom: .5rem; }
+    .catalog-card-meta { display: flex; flex-wrap: wrap; gap: .3rem .8rem; color: var(--muted); font-size: .88rem; }
+    .detail-cover { max-width: 24rem; }
+    .detail-cover .game-cover { height: clamp(12rem, 45vw, 19rem); }
+    .ballot-brief { border-inline-start: .2rem solid var(--gold); }
+    .ballot-brief strong { color: var(--gold); }
+    .ballot-brief p + p { color: var(--muted); }
+    .vote-control { margin: .9rem 0; padding: .7rem; border-radius: .6rem; background: #101a14; }
+    .vote-control select { width: 100%; border-color: #96764e; }
+    .ballot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .8rem 0; }
+    .ballot-actions p { margin: 0; color: var(--muted); }
     form > div { margin: .8rem 0; }
-    label { display: block; }
+    label { display: block; color: var(--cream); margin-bottom: .28rem; font-weight: 650; }
     input, select, textarea, button { font: inherit; max-width: 100%; }
-    input:not([type=checkbox]), select, textarea, button { box-sizing: border-box; padding: .4rem; }
+    input:not([type=checkbox]):not([type=hidden]), select, textarea { padding: .5rem .65rem; color: var(--cream); background: #111a15; border: 1px solid #647b6b; border-radius: .45rem; }
+    input, select { min-height: 2.65rem; }
+    input[type=checkbox], input[type=hidden] { min-height: auto; accent-color: var(--gold); }
+    button, .button { display: inline-block; padding: .6rem 1rem; border: 1px solid var(--gold); border-radius: .5rem; color: #281a14; background: var(--gold); font-weight: 750; text-decoration: none; cursor: pointer; }
+    button:hover, .button:hover { color: #281a14; background: #ffe0aa; }
     textarea { width: min(100%, 38rem); }
-    th, td { padding: .3rem .8rem .3rem 0; text-align: left; }
-    .errorlist { color: #b32c20; font-weight: bold; }
-    @media (prefers-color-scheme: dark) { .errorlist { color: #ff9a8f; } }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: .5rem .55rem .5rem 0; border-bottom: 1px solid var(--line); text-align: left; }
+    th { color: var(--gold); font-size: .82rem; }
+    .errorlist { color: var(--berry); font-weight: 650; }
+    @media (max-width: 38rem) {
+      .hero { grid-template-columns: minmax(0, 1fr) 5rem; gap: .35rem; }
+      .hero h1 { font-size: clamp(1.85rem, 7.8vw, 2.75rem); }
+      .masthead nav { min-height: 3.75rem; }
+    }
+    @media (max-width: 25rem) {
+      .hero { grid-template-columns: 1fr; }
+      .hero .holiday-art { display: none; }
+    }
   </style>
 </head>
 <body>
-  <nav aria-label="Main"><a href="{% url 'home' %}">Board Game Olympics</a><a href="{% url 'catalog' %}">Game catalog</a></nav>
-  <main>{% block content %}{% endblock %}</main>
+  <header class="masthead">
+    <nav class="wrap" aria-label="Main">
+      <a class="brand" href="{% url 'home' %}">
+        <span class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><rect x="2.5" y="2.5" width="15" height="15" rx="2.5" fill="none" stroke="currentColor"/><circle cx="6" cy="6" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="14" cy="14" r="1.2"/></svg></span>
+        Board Game Olympics
+      </a>
+      <a class="nav-link" href="{% url 'catalog' %}">Game catalog</a>
+    </nav>
+  </header>
+  <main class="wrap">{% block content %}{% endblock %}</main>
+  <footer class="footer wrap"><span aria-hidden="true">&#10022;</span> Board Game Olympics</footer>
 </body>
 </html>

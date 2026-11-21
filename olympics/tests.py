@@ -79,29 +79,38 @@ class EditionWorkflowTests(TestCase):
         self.assertEqual(self.request("edition", year=2026, member="Alice-voter").status_code, 404)
         self.assertEqual(self.manage("start", {}).status_code, 302)
         self.assertEqual(self.manage("nominees", {"games": []}).status_code, 404)
-        self.assertEqual(self.request("ballot", year=2026, member="organizer-id").status_code, 404)
+        self.assertRedirects(self.request("ballot", year=2026, member="Alice-voter"),
+                             "/editions/2026/#ballot", fetch_redirect_response=False)
+        self.assertNotContains(self.request("edition", year=2026), "Save ballot")
+        self.assertEqual(self.request("edition", {}, year=2026).status_code, 404)
         self.assertEqual(self.request("manage-edition", {}, year=2026, action="close",
                                       member="Alice-voter").status_code, 403)
-        duplicate = self.request("ballot", {"rank_1": first.pk, "rank_2": first.pk},
+        duplicate = self.request("edition", {f"game_{first.pk}": 2, f"game_{second.pk}": 2},
                                  year=2026, member="Alice-voter")
-        self.assertContains(duplicate, "Rank each game only once")
-        self.assertEqual(self.request("ballot", {"rank_1": second.pk, "rank_2": third.pk},
+        self.assertContains(duplicate, "Use each point value only once")
+        self.assertEqual(self.request("edition", {f"game_{second.pk}": 2, f"game_{third.pk}": 1},
                                       year=2026, member="Alice-voter").status_code, 302)
-        self.assertEqual(self.request("ballot", {"rank_1": first.pk, "rank_2": second.pk},
+        self.assertEqual(self.request("edition", {f"game_{first.pk}": 2, f"game_{second.pk}": 1},
                                       year=2026, member="Alice-voter").status_code, 302)
+        saved = self.request("edition", year=2026, member="Alice-voter")
+        self.assertContains(saved, "Your ballot is saved.")
+        self.assertContains(saved, f'name="game_{first.pk}"')
+        self.assertContains(saved, '<option value="2" selected>2 points</option>', html=True)
+        self.assertNotContains(self.request("edition", year=2026, member="Bob-voter"),
+                               '<option value="2" selected>2 points</option>', html=True)
         preclose = self.request("edition", year=2026)
         self.assertContains(preclose, "Ballots submitted: 1 / 2")
         self.assertNotContains(preclose, "Alice-voter")
         self.assertNotContains(preclose, "Ballot points:")
         self.assertNotContains(self.request("edition", year=2026, member="Bob-voter"), "Ballots submitted:")
         self.assertNotContains(self.request("game", pk=first.game_id, member="Bob-voter"), "Alice-voter")
-        self.assertEqual(self.request("ballot", {"rank_1": first.pk, "rank_2": third.pk},
+        self.assertEqual(self.request("edition", {f"game_{first.pk}": 2, f"game_{third.pk}": 1},
                                       year=2026, member="Bob-voter").status_code, 302)
         self.assertEqual(self.manage("close", {}).status_code, 302)
         edition.refresh_from_db()
         self.assertEqual(edition.phase, Edition.Phase.CUTOFF)
         self.assertContains(self.request("edition", year=2026, member="Future-member"), "Alice-voter")
-        self.assertEqual(self.request("ballot", {"rank_1": third.pk, "rank_2": first.pk},
+        self.assertEqual(self.request("edition", {f"game_{third.pk}": 2, f"game_{first.pk}": 1},
                                       year=2026, member="Alice-voter").status_code, 404)
         self.assertContains(self.manage("cutoff", {"games": [first.pk], "reason": "Not eligible"}),
                             "Select a valid choice")
@@ -126,24 +135,32 @@ class EditionWorkflowTests(TestCase):
         self.assertContains(history, "Bob-voter: Unranked")
         self.assertEqual(game_action(second, "results", ranks).status_code, 404)
 
-    def test_full_ten_slot_ballots_and_fewer_than_ten_nominees(self):
-        edition, games = self.draft(10, 11)
+    def test_eight_slot_ballots_and_fewer_nominees_than_slots(self):
+        create = self.request("create-edition")
+        self.assertEqual(create.context["form"]["slots"].value(), 8)
+        edition, games = self.draft(8, 9)
         self.assertEqual(self.manage("start", {}).status_code, 302)
-        self.assertContains(self.request("ballot", {"rank_1": games[0].pk}, year=2026,
-                                         member="Alice-voter"), "This field is required")
-        self.assertEqual(self.request("ballot", {
-            f"rank_{rank}": game.pk for rank, game in enumerate(games[:10], 1)
+        ballot = self.request("edition", year=2026, member="Alice-voter")
+        self.assertContains(ballot, "Give 8 points to your favorite and 1 point to your last pick.")
+        self.assertContains(self.request("edition", {f"game_{games[0].pk}": 8}, year=2026,
+                                         member="Alice-voter"), "Assign points to exactly 8 games")
+        self.assertEqual(self.request("edition", {
+            f"game_{game.pk}": points for points, game in zip(range(8, 0, -1), games[:8])
         }, year=2026, member="Alice-voter").status_code, 302)
         self.assertEqual(self.manage("close", {}).status_code, 302)
-        self.assertEqual(list(edition.nomination_set.filter(selected=True).values_list("pk", flat=True)),
-                         [game.pk for game in games[:10]])
+        self.assertEqual(
+            [(game.pk, game.total_votes) for game in edition.nomination_set.filter(selected=True)],
+            [(game.pk, points) for game, points in zip(games[:8], range(8, 0, -1))],
+        )
 
         edition = Edition.objects.create(year=2027, slots=10, phase=Edition.Phase.OPEN)
         for game in games[:2]:
             edition.nomination_set.create(game=game.game, title=game.title)
         edition.voter_set.create(member=Member.objects.get(subject="Alice-voter"), name="Alice")
         first, second = list(edition.nomination_set.all())
-        self.assertEqual(self.request("ballot", {"rank_1": first.pk, "rank_2": second.pk},
+        self.assertContains(self.request("edition", {f"game_{first.pk}": 10, f"game_{second.pk}": 1},
+                                         year=2027, member="Alice-voter"), "Select a valid choice")
+        self.assertEqual(self.request("edition", {f"game_{first.pk}": 10, f"game_{second.pk}": 9},
                                       year=2027, member="Alice-voter").status_code, 302)
         self.assertEqual(self.manage("close", {}, year=2027).status_code, 302)
         self.assertEqual([game.total_votes for game in edition.nomination_set.all()], [10, 9])
@@ -196,3 +213,24 @@ class EditionWorkflowTests(TestCase):
         page = self.request("game", pk=game.pk, member="new-member")
         for text in ("A summary.", "2–4", "30 minutes", "https://www.youtube.com/watch?v=AbC123def45"):
             self.assertContains(page, text)
+
+    def test_old_wikidata_links_are_gone_but_imported_games_remain(self):
+        game = Game.objects.create(title="Azul", wikidata_id="Q44367843")
+        for path in ("/games/wikidata/", "/games/wikidata/Q44367843/"):
+            self.assertEqual(self.client.get(
+                path, secure=True, headers={"Remote-Sub": "organizer-id"},
+            ).status_code, 404)
+        self.assertNotContains(self.request("catalog"), "Search Wikidata")
+        self.assertContains(self.request("game", pk=game.pk), "https://www.wikidata.org/wiki/Q44367843")
+
+    def test_catalog_displays_optional_https_box_art(self):
+        image = "https://publisher.example/cover.png"
+        starter_count = Game.objects.count()
+        self.assertEqual(self.request("create-game", {"title": "Covered", "cover_url": image}).status_code, 302)
+        Game.objects.create(title="Uncovered")
+        page = self.request("catalog", member="a-member")
+        self.assertContains(page, f'src="{image}"', count=1)
+        self.assertContains(page, 'class="game-cover"', count=starter_count + 2)
+        self.assertContains(self.request("create-game", {
+            "title": "Insecure cover", "cover_url": "http://publisher.example/cover.png",
+        }), "Enter an HTTPS image URL")

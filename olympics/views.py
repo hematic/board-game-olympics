@@ -3,10 +3,11 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_safe
 
 from . import bgg, competition
-from .forms import BallotForm, EditionForm, GameForm, ResultsForm, ScoringForm
+from .forms import BallotForm, EditionForm, GameForm, ResultsForm, ScoringForm, WikidataGameForm
 from .models import Competitor, Edition, Game, Member, Nomination, Result, Voter
 
 Phase = Edition.Phase
@@ -58,8 +59,16 @@ def create_edition(request):
     return form_page(request, "New edition", form)
 
 
-@require_safe
+@require_http_methods(["GET", "HEAD", "POST"])
 def edition_page(request, year):
+    if request.method == "POST":
+        # Serialize ballot writes with closing the vote.
+        with transaction.atomic():
+            return render_edition(request, year)
+    return render_edition(request, year)
+
+
+def render_edition(request, year):
     edition = get_edition(request, year)
     is_organizer = request.member.is_organizer
     revealed = not edition.historical and edition.phase in {Phase.CUTOFF, Phase.PLAY, Phase.ARCHIVED}
@@ -68,15 +77,35 @@ def edition_page(request, year):
     ))
     if revealed:
         games.sort(key=lambda game: (game.total_votes, game.vote_breakdown), reverse=True)
+    voter = None
+    if edition.phase == Phase.OPEN:
+        voter = edition.voter_set.filter(member=request.member).first()
+    if request.method == "POST" and voter is None:
+        raise Http404("Voting is not available.")
+    ballot_form = None
+    if voter is not None:
+        ballot_form = BallotForm(
+            games, edition.slots, voter.ranking,
+            request.POST if request.method == "POST" else None,
+        )
+        if ballot_form.is_valid():
+            voter.ranking = ballot_form.ranking
+            voter.save(update_fields=["ranking"])
+            return redirect(f"{request.path}#ballot")
     return render(request, "olympics/edition.html", {
         "edition": edition,
         "organizer": is_organizer,
-        "games": games,
+        "game_rows": [
+            (game, ballot_form[ballot_form.field_name(game.pk)] if ballot_form is not None else None)
+            for game in games
+        ],
+        "ballot_form": ballot_form,
+        "has_saved_ballot": voter is not None and voter.ranking is not None,
+        "no_ballots": revealed and (not games or not games[0].total_votes),
         "revealed": revealed,
         "ballots": competition.revealed_ballots(edition) if revealed else [],
         "turnout": competition.turnout(edition) if is_organizer and edition.phase == Phase.OPEN else None,
         "eligible": edition.voter_set.count() if is_organizer else None,
-        "can_vote": edition.phase == Phase.OPEN and edition.voter_set.filter(member=request.member).exists(),
         "standings": competition.standings(edition),
     })
 
@@ -185,27 +214,10 @@ def manage_edition(request, year, action):
                      edition=edition, hint=hint)
 
 
-@require_http_methods(["GET", "POST"])
-@transaction.atomic
+@require_safe
 def ballot(request, year):
-    edition = get_edition(request, year)
-    if edition.phase != Phase.OPEN:
-        raise Http404("Voting is not open.")
-    voter = get_object_or_404(edition.voter_set, member=request.member)
-    initial = {f"rank_{index}": game for index, game in enumerate(voter.ranking or [], 1)}
-    form = BallotForm(
-        list(edition.nomination_set.all()), edition.slots,
-        request.POST if request.method == "POST" else None, initial=initial,
-    )
-    if form.is_valid():
-        voter.ranking = list(form.cleaned_data.values())
-        voter.save(update_fields=["ranking"])
-        return redirect("ballot", year=year)
-    return form_page(request, "Your ranked ballot", form, edition=edition, hint=(
-        "You can replace your ballot until voting closes. After close, all signed-in members "
-        "can see your name and rankings. Your ballot is saved." if voter.ranking else
-        "After the vote closes, all signed-in members can see your name and rankings."
-    ))
+    get_edition(request, year)
+    return redirect(f"{reverse('edition', kwargs={'year': year})}#ballot")
 
 
 @require_http_methods(["GET", "POST"])
@@ -291,7 +303,8 @@ def game_detail(request, pk):
 def edit_game(request, pk=None):
     organizer(request)
     game = get_object_or_404(Game, pk=pk) if pk is not None else None
-    form = GameForm(request.POST if request.method == "POST" else None, instance=game)
+    form_class = WikidataGameForm if game is not None and game.wikidata_id else GameForm
+    form = form_class(request.POST if request.method == "POST" else None, instance=game)
     if game is not None and game.bgg_id:
         for field in ("title", "year", "min_players", "max_players", "playing_time"):
             form.fields[field].disabled = True

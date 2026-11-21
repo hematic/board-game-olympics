@@ -2,6 +2,9 @@
 {% block content %}
 <h1>{{ game }}</h1>
 {% if organizer %}<p><a href="{% url 'edit-game' game.pk %}">Edit game</a></p>{% endif %}
+{% if game.cover_url %}
+  <div class="detail-cover">{% include "olympics/game_cover.html" %}</div>
+{% endif %}
 {% include "olympics/game_info.html" %}
 <h2>Olympics history</h2>
 {% for entry, votes in history %}

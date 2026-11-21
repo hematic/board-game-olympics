@@ -1,8 +1,27 @@
 {% extends "olympics/base.html" %}
 {% block content %}
-<h1>Game catalog</h1>
-{% if organizer %}<p><a href="{% url 'bgg-search' %}">Search BoardGameGeek</a> or <a href="{% url 'create-game' %}">add a game manually</a>.</p>{% endif %}
-<ul>
-  {% for game in games %}<li><a href="{% url 'game' game.pk %}">{{ game }}</a></li>{% empty %}<li>No games yet.</li>{% endfor %}
-</ul>
+<div class="hero">
+  <div>
+    <p class="eyebrow">The game shelf</p>
+    <h1>Game catalog</h1>
+    {% if organizer %}<nav aria-label="Catalog actions"><a class="button" href="{% url 'create-game' %}">Add a game manually</a><a href="{% url 'bgg-search' %}">Search BoardGameGeek</a></nav>{% endif %}
+  </div>
+  {% include "olympics/holiday_art.html" %}
+</div>
+<div class="game-grid">
+  {% for game in games %}
+    <article class="catalog-card">
+      <a class="catalog-card-link" href="{% url 'game' game.pk %}">
+        {% include "olympics/game_cover.html" %}
+        <h2>{{ game }}</h2>
+      </a>
+      <div class="catalog-card-meta">
+        {% if game.min_players and game.max_players %}<span>{{ game.min_players }}&ndash;{{ game.max_players }} players</span>{% endif %}
+        {% if game.playing_time %}<span>{{ game.playing_time }} min</span>{% endif %}
+      </div>
+    </article>
+  {% empty %}
+    <p>No games yet.</p>
+  {% endfor %}
+</div>
 {% endblock %}

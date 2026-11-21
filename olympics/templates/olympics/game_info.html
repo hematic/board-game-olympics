@@ -5,4 +5,5 @@
 {% if game.video_url %}<p><a href="{{ game.video_url }}">How to play on YouTube</a></p>{% endif %}
 {% if game.description %}{{ game.description|linebreaks }}{% endif %}
 {% if game.bgg_id %}<p>Source: <a href="https://boardgamegeek.com/boardgame/{{ game.bgg_id }}">BoardGameGeek</a>.</p>{% endif %}
-{% if game.notes %}<p><strong>Organizer notes</strong></p>{{ game.notes|linebreaks }}{% endif %}
+{% if game.wikidata_id %}<p>Source: <a href="https://www.wikidata.org/wiki/{{ game.wikidata_id }}">Wikidata</a> (reviewed by the organizer).</p>{% endif %}
+{% if game.notes %}<p><strong>Description</strong></p>{{ game.notes|linebreaks }}{% endif %}

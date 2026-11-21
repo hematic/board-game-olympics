@@ -1,14 +1,24 @@
 {% extends "olympics/base.html" %}
 {% block content %}
-<h1>Board Game Olympics</h1>
+<div class="hero">
+  <div>
+    <p class="eyebrow">A holiday game-night tradition</p>
+    <h1>Board Game Olympics</h1>
+    <p>Pick the lineup, play for points, and see who takes the crown.</p>
+    {% if organizer %}<p><a class="button" href="{% url 'create-edition' %}">Create an edition</a></p>{% endif %}
+  </div>
+  {% include "olympics/holiday_art.html" %}
+</div>
 <p>Signed in as {% if organizer %}an organizer{% else %}a member{% endif %}.</p>
-{% if organizer %}<p><a href="{% url 'create-edition' %}">Create an edition</a></p>{% endif %}
 <h2>Editions</h2>
-<ul>
+<div class="edition-list">
   {% for edition in editions %}
-    <li><a href="{% url 'edition' edition.year %}">{{ edition.year }} Olympics</a> ({{ edition.get_phase_display }})</li>
+    <article>
+      <h3><a href="{% url 'edition' edition.year %}">{{ edition.year }} Olympics</a></h3>
+      <p class="phase phase--{{ edition.phase }}">{{ edition.get_phase_display }}</p>
+    </article>
   {% empty %}
-    <li>No editions to show yet.</li>
+    <p>No editions to show yet.</p>
   {% endfor %}
-</ul>
+</div>
 {% endblock %}
