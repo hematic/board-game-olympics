@@ -135,8 +135,10 @@ def render_edition(request, year):
             voter.save(update_fields=["ranking"])
             return redirect(f"{request.path}#ballot")
     standings = competition.standings(edition)
+    lineup = [game for game in games if game.selected]
+    games_scored = sum(game.scored for game in lineup)
     remaining = [
-        game for game in games if game.selected and not game.scored
+        game for game in lineup if not game.scored
     ] if edition.phase == Phase.PLAY and not edition.historical else []
     configured = [game for game in remaining if game.awards]
     unconfigured = [game.title for game in remaining if not game.awards]
@@ -156,6 +158,8 @@ def render_edition(request, year):
         "turnout": competition.turnout(edition) if is_organizer and edition.phase == Phase.OPEN else None,
         "eligible": edition.voter_set.count() if is_organizer else None,
         "standings": standings,
+        "lineup_size": len(lineup),
+        "games_scored": games_scored,
         "scenario_games": configured,
         "scenario_unconfigured": unconfigured,
         "scenario_points_left": points_left,

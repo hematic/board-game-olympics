@@ -116,6 +116,53 @@
     th, td { padding: .5rem .55rem .5rem 0; border-bottom: 1px solid var(--line); text-align: left; }
     th { color: var(--gold); font-size: .82rem; }
     .errorlist { color: var(--berry); font-weight: 650; }
+    .scoreboard {
+      padding: 0; border-color: #977144; border-radius: 1rem;
+      background: #141f19; box-shadow: 0 .8rem 2rem #0004;
+    }
+    .scoreboard-header {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: .75rem 1.5rem; padding: clamp(.9rem, 3vw, 1.75rem);
+      border-radius: calc(1rem - 1px) calc(1rem - 1px) 0 0;
+      border-bottom: 2px solid #977144;
+      background: repeating-linear-gradient(135deg, transparent 0 13px, #ffffff0d 13px 14px),
+                  radial-gradient(ellipse at right top, #63323d, transparent 75%), #312128;
+    }
+    .scoreboard-header .eyebrow { margin-bottom: .35rem; }
+    .scoreboard-header h2 { font-size: clamp(1.75rem, 5vw, 2.85rem); margin: 0; letter-spacing: -.025em; }
+    .scoreboard-status {
+      border: 1px solid #a97577; border-radius: 2rem; padding: .25rem .65rem;
+      background: #331e23; color: #f4c3c5; font-size: .8rem; font-weight: 700;
+    }
+    .scoreboard-body { padding: clamp(.75rem, 2.75vw, 1.5rem); }
+    .scoreboard-progress {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem;
+      padding-bottom: .7rem; color: var(--muted);
+    }
+    .scoreboard-progress label { margin: 0; color: inherit; font-size: .875rem; font-weight: 500; }
+    .scoreboard-progress strong { color: var(--gold); font-variant-numeric: tabular-nums; }
+    .scoreboard-progress progress { flex: 1 1 7rem; max-width: 16rem; height: .65rem; accent-color: var(--gold); }
+    .scoreboard-note { color: var(--muted); }
+    .scoreboard-note:last-child { margin-bottom: 0; }
+    .scoreboard-table { border-collapse: separate; border-spacing: 0 .35rem; }
+    .scoreboard-table th, .scoreboard-table td { padding: .55rem clamp(.35rem, 1.7vw, 1rem); border: 0; }
+    .scoreboard-table thead th { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .09em; white-space: nowrap; }
+    .scoreboard-table thead th:first-child, .scoreboard-table tbody td:first-child { width: 1%; text-align: center; }
+    .scoreboard-table thead th:last-child, .scoreboard-table tbody td:last-child { width: 1%; text-align: right; }
+    .scoreboard-table tbody tr { --rank-ink: var(--muted); --rank-bg: #152019; --row-bg: #1e2d24; }
+    .scoreboard-table tbody tr.scoreboard-place-1 { --rank-ink: #ffdf9d; --rank-bg: #533718; --row-bg: #372a1e; }
+    .scoreboard-table tbody tr.scoreboard-place-2 { --rank-ink: #dbe7eb; --rank-bg: #34494f; --row-bg: #263438; }
+    .scoreboard-table tbody tr.scoreboard-place-3 { --rank-ink: #ffcfaa; --rank-bg: #583529; --row-bg: #392b27; }
+    .scoreboard-table tbody :is(td, th) { background: var(--row-bg); border-block: 1px solid #ffffff16; }
+    .scoreboard-table tbody td:first-child { border-inline-start: .2rem solid var(--rank-ink); border-radius: .5rem 0 0 .5rem; }
+    .scoreboard-table tbody td:last-child { border-inline-end: 1px solid #ffffff16; border-radius: 0 .5rem .5rem 0; }
+    .scoreboard-table tbody th { color: var(--cream); font-size: clamp(1rem, 2.5vw, 1.2rem); line-height: 1.25; }
+    .scoreboard-rank, .scoreboard-points { font-variant-numeric: tabular-nums; font-weight: 800; }
+    .scoreboard-rank {
+      display: inline-block; min-width: 2rem; padding: .18rem .35rem; border-radius: .35rem;
+      background: var(--rank-bg); color: var(--rank-ink); white-space: nowrap;
+    }
+    .scoreboard-points { color: var(--rank-ink); font-size: clamp(1.25rem, 4vw, 2rem); line-height: 1.1; white-space: nowrap; }
     @media (max-width: 38rem) {
       .hero { grid-template-columns: minmax(0, 1fr) 5rem; gap: .35rem; }
       .hero h1 { font-size: clamp(1.85rem, 7.8vw, 2.75rem); }
@@ -124,6 +171,8 @@
     @media (max-width: 25rem) {
       .hero { grid-template-columns: 1fr; }
       .hero .holiday-art { display: none; }
+      .scoreboard-table thead th { letter-spacing: .04em; }
+      .scoreboard-points { font-size: 1.1rem; }
     }
   </style>
 </head>

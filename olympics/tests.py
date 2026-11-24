@@ -260,6 +260,11 @@ class EditionWorkflowTests(TestCase):
         for section in ("standings", "game-results", "revealed-ballots"):
             self.assertContains(edition_page, f'href="#{section}"')
             self.assertContains(edition_page, f'id="{section}"')
+        self.assertLess(edition_page.content.index(b'id="standings"'),
+                        edition_page.content.index(b'id="game-results"'))
+        self.assertContains(edition_page, "No game results recorded yet.")
+        self.assertContains(edition_page, '<progress id="scoreboard-progress" value="0" max="2">')
+        self.assertNotContains(edition_page, 'class="scoreboard-place-1"')
         self.assertContains(edition_page, "Configure scoring", count=3)
         self.assertNotContains(self.request("edition", year=2026, member="Alice-voter"), "Configure scoring")
         players = list(edition.competitor_set.all())
@@ -279,16 +284,30 @@ class EditionWorkflowTests(TestCase):
                             "skipping occupied places")
         self.assertEqual(game_action(second, "results", ranks).status_code, 302)
         self.assertEqual(competition.standings(edition), [(1, "Pat", 15), (1, "Quinn", 15), (3, "Sam", 3)])
+        scoreboard = self.request("edition", year=2026, member="Alice-voter")
+        self.assertContains(scoreboard, '<progress id="scoreboard-progress" value="2" max="2">')
+        self.assertContains(scoreboard, 'class="scoreboard-place-1"', count=2)
+        self.assertNotContains(scoreboard, 'class="scoreboard-place-2"')
+        self.assertContains(scoreboard, 'class="scoreboard-place-3"')
+        self.assertContains(scoreboard, '<td class="scoreboard-points">15</td>', count=2)
         self.assertEqual(game_action(first, "scoring", {"mode": "winner", "awards": "1"}).status_code, 302)
         self.assertEqual(competition.standings(edition), [(1, "Pat", 6), (1, "Quinn", 6), (3, "Sam", 0)])
         self.assertEqual(self.manage("archive", {}).status_code, 302)
         self.assertEqual(game_action(first, "scoring", {"mode": "placement", "awards": "4,2,1"}).status_code, 302)
         self.assertEqual(list(first.result_set.values_list("place", "points")), [(1, 4), (1, 4), (3, 1)])
         self.assertEqual(competition.standings(edition), [(1, "Pat", 9), (1, "Quinn", 9), (3, "Sam", 1)])
+        self.assertContains(self.request("edition", year=2026),
+                            '<span class="scoreboard-status">Archived</span>', html=True)
         history = self.request("game", pk=second.game_id, member="Future-member")
         self.assertContains(history, "Alice-voter: Rank 2")
         self.assertContains(history, "Bob-voter: Unranked")
         self.assertEqual(game_action(second, "results", ranks).status_code, 404)
+
+    def test_scoreboard_handles_an_edition_without_competitors(self):
+        Edition.objects.create(year=2027, slots=8, phase=Edition.Phase.PLAY)
+        page = self.request("edition", year=2027, member="family-member")
+        self.assertContains(page, "No competitors have been added yet.")
+        self.assertNotContains(page, 'class="scoreboard-table"')
 
     def test_scoring_is_visible_and_editable_during_voting_without_changing_ballots(self):
         edition, (game,) = self.draft(1, 1)

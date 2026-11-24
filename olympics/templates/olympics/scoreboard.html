@@ -1,0 +1,35 @@
+<section id="standings" class="scoreboard" aria-labelledby="standings-heading">
+  <header class="scoreboard-header">
+    <div>
+      <p class="eyebrow">{{ edition.year }} &middot; Scoreboard</p>
+      <h2 id="standings-heading">Overall standings</h2>
+    </div>
+    <span class="scoreboard-status">{% if edition.phase == 'archived' %}Archived{% else %}Competition in progress{% endif %}</span>
+  </header>
+  <div class="scoreboard-body">
+    {% if lineup_size %}
+      <div class="scoreboard-progress">
+        <label for="scoreboard-progress"><strong>{{ games_scored }} of {{ lineup_size }}</strong> games scored</label>
+        <progress id="scoreboard-progress" value="{{ games_scored }}" max="{{ lineup_size }}"></progress>
+      </div>
+    {% endif %}
+    {% if standings %}
+      {% if not games_scored %}<p class="scoreboard-note">{% if edition.phase == 'archived' %}No game results on record.{% else %}No game results recorded yet.{% endif %}</p>{% endif %}
+      <table class="scoreboard-table" aria-labelledby="standings-heading">
+        <thead><tr><th scope="col">Rank</th><th scope="col">Competitor</th><th scope="col">Points</th></tr></thead>
+        <tbody>
+          {% for rank, name, points in standings %}
+            <tr{% if games_scored and rank <= 3 %} class="scoreboard-place-{{ rank }}"{% endif %}>
+              <td><span class="scoreboard-rank">{{ rank }}</span></td>
+              <th scope="row">{{ name }}</th>
+              <td class="scoreboard-points">{{ points }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="scoreboard-note">No competitors have been added yet.</p>
+    {% endif %}
+    {% if scenario_rows %}{% include "olympics/what_if.html" %}{% endif %}
+  </div>
+</section>
