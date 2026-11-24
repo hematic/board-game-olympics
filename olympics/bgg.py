@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from time import sleep
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from xml.etree import ElementTree
@@ -20,6 +21,8 @@ class SearchResult:
     id: int
     title: str
     year: int | None
+    min_players: int | None = None
+    max_players: int | None = None
 
 
 def fetch(endpoint: str, **params):
@@ -48,14 +51,32 @@ def number(node, tag):
     return int(value) if value.isascii() and value.isdigit() and len(value) <= 5 and 0 < int(value) <= 32767 else None
 
 
-def search(query: str):
+def search(query: str, players: int | None = None) -> list[SearchResult]:
     results = []
     for node in fetch("search", query=query, type="boardgame").findall("item")[:30]:
         name = node.find("name")
         game_id = node.get("id", "")
         if name is not None and game_id.isascii() and game_id.isdigit() and len(game_id) <= 9:
             results.append(SearchResult(int(game_id), name.get("value", ""), number(node, "yearpublished")))
-    return results
+    if players is None or not results:
+        return results
+    player_ranges = {}
+    for start in range(0, len(results), 20):
+        batch = results[start:start + 20]
+        sleep(5)
+        nodes = fetch("thing", id=",".join(str(item.id) for item in batch))
+        for item in batch:
+            node = nodes.find(f"item[@id='{item.id}']")
+            if node is None:
+                raise BGGError("BoardGameGeek did not return all player counts. Try again shortly.")
+            if node.get("type") == "boardgame":
+                player_ranges[item.id] = (number(node, "minplayers"), number(node, "maxplayers"))
+    filtered = []
+    for item in results:
+        low, high = player_ranges.get(item.id, (None, None))
+        if low is not None and high is not None and low <= players <= high:
+            filtered.append(SearchResult(item.id, item.title, item.year, low, high))
+    return filtered
 
 
 def details(game_id: int):

@@ -2,10 +2,10 @@
 {% block content %}
 <h1>Search BoardGameGeek</h1>
 <form method="get">
-  <label for="q">Game name</label>
-  <input id="q" name="q" value="{{ query }}" maxlength="100" required>
+  {{ search_form.as_p }}
   <button type="submit">Search</button>
 </form>
+<p>Searches check the first 30 name matches from BoardGameGeek. Player-count filtering excludes expansions and may take a few seconds.</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if results %}
   <ul>
@@ -14,9 +14,10 @@
       {% csrf_token %}
       <input type="hidden" name="id" value="{{ item.id }}">
       <button type="submit">Import {{ item.title }}{% if item.year %} ({{ item.year }}){% endif %}</button>
+      {% if item.min_players %}<span>{{ item.min_players }}{% if item.min_players != item.max_players %}&ndash;{{ item.max_players }}{% endif %} players</span>{% endif %}
     </form></li>
   {% endfor %}
   </ul>
-{% elif query and not error %}<p>No matches found.</p>{% endif %}
+{% elif searched and not error %}<p>No matches found among the first 30 name matches{% if search_form.cleaned_data.players %} for {{ search_form.cleaned_data.players }} players{% endif %}. Try a more specific game name or a different player count.</p>{% endif %}
 <p><a href="{% url 'create-game' %}">Add a game manually</a></p>
 {% endblock %}

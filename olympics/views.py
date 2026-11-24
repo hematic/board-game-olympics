@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_safe
 
 from . import bgg, competition
-from .forms import AccountCreationForm, BallotForm, EditionForm, GameForm, ResultsForm, ScoringForm, WikidataGameForm
+from .forms import AccountCreationForm, BallotForm, BGGSearchForm, EditionForm, GameForm, ResultsForm, ScoringForm, WikidataGameForm
 from .models import Competitor, Edition, Game, Member, Nomination, Result, Voter
 
 Phase = Edition.Phase
@@ -405,7 +405,8 @@ def bgg_search(request):
     organizer(request)
     results = []
     error = ""
-    query = request.GET.get("q", "").strip()
+    search_form = BGGSearchForm(request.GET if request.GET else None)
+    searched = False
     if request.method == "POST":
         form = build_form({"id": forms.IntegerField(min_value=1, max_value=999999999)}, request.POST)
         if not form.is_valid():
@@ -419,12 +420,12 @@ def bgg_search(request):
                 return redirect("game", pk=game.pk)
             except bgg.BGGError as failure:
                 error = str(failure)
-    elif query:
-        if len(query) > 100:
-            error = "Searches must be at most 100 characters."
-        else:
-            try:
-                results = bgg.search(query)
-            except bgg.BGGError as failure:
-                error = str(failure)
-    return render(request, "olympics/bgg.html", {"results": results, "query": query, "error": error})
+    elif search_form.is_bound and search_form.is_valid():
+        searched = True
+        try:
+            results = bgg.search(search_form.cleaned_data["q"], players=search_form.cleaned_data["players"])
+        except bgg.BGGError as failure:
+            error = str(failure)
+    return render(request, "olympics/bgg.html", {
+        "results": results, "search_form": search_form, "searched": searched, "error": error,
+    })

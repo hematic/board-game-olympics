@@ -5,11 +5,94 @@ from xml.etree import ElementTree
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import Client, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from . import bgg, competition
 from .models import Edition, Game, Member, Result, Voter
+
+
+class BGGSearchTests(SimpleTestCase):
+    @patch("olympics.bgg.sleep")
+    @patch("olympics.bgg.fetch")
+    def test_player_filter_includes_boundaries_and_excludes_unknown_ranges(self, fetch, sleep):
+        fetch.side_effect = [
+            ElementTree.fromstring(
+                '<items>' + ''.join(
+                    f'<item id="{game_id}"><name value="Game {game_id}"/></item>'
+                    for game_id in range(1, 8)
+                ) + '</items>'
+            ),
+            ElementTree.fromstring(
+                '<items>'
+                '<item id="1" type="boardgame"><minplayers value="4"/><maxplayers value="6"/></item>'
+                '<item id="2" type="boardgame"><minplayers value="2"/><maxplayers value="4"/></item>'
+                '<item id="3" type="boardgame"><minplayers value="1"/><maxplayers value="3"/></item>'
+                '<item id="4" type="boardgame"><minplayers value="5"/><maxplayers value="8"/></item>'
+                '<item id="5" type="boardgame"><minplayers value="2"/></item>'
+                '<item id="6" type="boardgame"><minplayers value="unknown"/><maxplayers value="6"/></item>'
+                '<item id="7" type="boardgameexpansion"><minplayers value="2"/><maxplayers value="6"/></item>'
+                '</items>'
+            ),
+        ]
+        results = bgg.search("Game", players=4)
+        self.assertEqual([(item.id, item.min_players, item.max_players) for item in results],
+                         [(1, 4, 6), (2, 2, 4)])
+        self.assertEqual(fetch.call_args.kwargs, {"id": "1,2,3,4,5,6,7"})
+        sleep.assert_called_once_with(5)
+
+    @patch("olympics.bgg.sleep")
+    @patch("olympics.bgg.fetch")
+    def test_filtered_search_batches_at_most_twenty_and_checks_first_thirty(self, fetch, sleep):
+        fetch.side_effect = [
+            ElementTree.fromstring(
+                '<items>' + ''.join(
+                    f'<item id="{game_id}"><name value="Game {game_id}"/></item>'
+                    for game_id in range(1, 36)
+                ) + '</items>'
+            ),
+            *[
+                ElementTree.fromstring(
+                    '<items>' + ''.join(
+                        f'<item id="{game_id}" type="boardgame">'
+                        '<minplayers value="2"/><maxplayers value="4"/></item>'
+                        for game_id in game_ids
+                    ) + '</items>'
+                )
+                for game_ids in (range(1, 21), range(21, 31))
+            ],
+        ]
+        results = bgg.search("Game", players=3)
+        self.assertEqual([item.id for item in results], list(range(1, 31)))
+        self.assertEqual(
+            [call.kwargs["id"] for call in fetch.call_args_list[1:]],
+            [",".join(map(str, range(1, 21))), ",".join(map(str, range(21, 31)))],
+        )
+        self.assertEqual(sleep.call_count, 2)
+
+    @patch("olympics.bgg.sleep")
+    @patch("olympics.bgg.fetch")
+    def test_unfiltered_and_empty_searches_do_not_fetch_details(self, fetch, sleep):
+        fetch.side_effect = [
+            ElementTree.fromstring('<items><item id="42"><name value="Example"/></item></items>'),
+            ElementTree.fromstring('<items/>'),
+        ]
+        self.assertEqual(bgg.search("Example"), [bgg.SearchResult(42, "Example", None)])
+        self.assertEqual(bgg.search("Missing", players=4), [])
+        self.assertEqual(fetch.call_count, 2)
+        sleep.assert_not_called()
+
+    @patch("olympics.bgg.sleep")
+    @patch("olympics.bgg.fetch")
+    def test_missing_details_and_api_failures_are_not_reported_as_no_matches(self, fetch, sleep):
+        for response in (ElementTree.fromstring('<items/>'), bgg.BGGError("Try again later.")):
+            with self.subTest(response=response):
+                fetch.side_effect = [
+                    ElementTree.fromstring('<items><item id="42"><name value="Example"/></item></items>'),
+                    response,
+                ]
+                with self.assertRaises(bgg.BGGError):
+                    bgg.search("Example", players=4)
 
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
@@ -360,6 +443,42 @@ class EditionWorkflowTests(TestCase):
         page = self.request("game", pk=game.pk, member="new-member")
         for text in ("A summary.", "2–4", "30 minutes", "https://www.youtube.com/watch?v=AbC123def45"):
             self.assertContains(page, text)
+
+    @patch("olympics.bgg.search")
+    def test_bgg_search_passes_player_filter_and_displays_range(self, search):
+        search.return_value = [bgg.SearchResult(42, "Example", 2024, 2, 4)]
+        self.request("home")
+        page = self.client.get(reverse("bgg-search"), {"q": " Example ", "players": "4"}, secure=True)
+        search.assert_called_once_with("Example", players=4)
+        self.assertContains(page, "Import Example (2024)")
+        self.assertContains(page, "2&ndash;4 players")
+        self.assertContains(page, 'value="4"')
+        search.return_value = []
+        page = self.client.get(reverse("bgg-search"), {"q": "Example", "players": "5"}, secure=True)
+        self.assertContains(page, "No matches found among the first 30 name matches for 5 players")
+        search.side_effect = bgg.BGGError("Try again later.")
+        page = self.client.get(reverse("bgg-search"), {"q": "Example", "players": "5"}, secure=True)
+        self.assertContains(page, "Try again later.")
+        self.assertNotContains(page, "No matches found")
+
+    @patch("olympics.bgg.search")
+    def test_bgg_search_validates_inputs_before_calling_api(self, search):
+        self.request("home")
+        for params in (
+            {"q": "Example", "players": "0"},
+            {"q": "Example", "players": "-1"},
+            {"q": "Example", "players": "1.5"},
+            {"q": "Example", "players": "many"},
+            {"q": "Example", "players": "32768"},
+            {"q": "x" * 101},
+            {"players": "4"},
+        ):
+            with self.subTest(params=params):
+                page = self.client.get(reverse("bgg-search"), params, secure=True)
+                self.assertTrue(page.context["search_form"].errors)
+                self.assertNotContains(page, "No matches found")
+        search.assert_not_called()
+        self.assertEqual(self.request("bgg-search", member="family-member").status_code, 403)
 
     def test_old_wikidata_links_are_gone_but_imported_games_remain(self):
         game = Game.objects.create(title="Azul", wikidata_id="Q44367843")

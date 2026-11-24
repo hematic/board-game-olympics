@@ -35,6 +35,15 @@ class EditionForm(forms.ModelForm):
         return slots
 
 
+class BGGSearchForm(forms.Form):
+    q = forms.CharField(label="Game name", max_length=100)
+    players = forms.IntegerField(
+        label="Number of players", min_value=1, max_value=32767, required=False,
+        help_text="Optional. Matches the published player range, not community recommendations. "
+                  "Games with unknown player counts are excluded.",
+    )
+
+
 class GameForm(forms.ModelForm):
     class Meta:
         model = Game

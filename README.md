@@ -15,7 +15,7 @@ The interface uses a dark holiday theme and adapts to phones and larger screens.
    docker compose up -d
    ```
 
-   The example uses `hematic/board-game-olympics:v0.6.0`. To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
+   The example uses `hematic/board-game-olympics:v0.7.0`. To build from source instead, set `OLYMPICS_IMAGE=board-game-olympics:local` and run `docker build -t board-game-olympics:local .` in place of `docker compose pull app`.
 
 Use the site's HTTPS URL to sign in. The SQLite database lives on the `olympics-data` Compose volume. Keep one app replica and back up the volume before upgrading. Once an active organizer with a password exists, the bootstrap settings are ignored; remove the bootstrap username and password from `.env` and recreate the container to clear them from its environment. Changing those values never resets an existing password or promotes a family account.
 
@@ -46,6 +46,7 @@ Sign in as the organizer and open **Accounts** to create a username and initial 
 ## Running an edition
 
 1. Add games manually from **Game catalog**, or search BoardGameGeek if a token is configured. Add YouTube rules links under **Edit game**.
+   BGG search accepts a game name and an optional **Number of players**. The filter checks whether the published minimum–maximum range includes that count, not community recommendations; expansions and games with unknown counts are excluded. Only the first 30 name matches are checked, so use a specific name. Detail lookups are batched (up to 20 games per request) and spaced five seconds apart, so filtered searches take longer.
    To show box art, set **Box art image URL** to a direct HTTPS image you have permission to display. The browser loads covers from their source; the app does not download them.
 2. Create the year's edition and set the number of lineup slots (8 by default). Add accounts to the voter roster; they don't need to sign in first. Add competitors separately and choose the nominees. Use **Configure scoring** on each nominee card to choose **Winner takes all** (one award) or **Placement** (points from first place onward, such as `10, 6, 3`). These rules apply to this year only and are visible to voters on the nominee cards.
 3. Open voting. Voters assign points next to each game on the edition page and select **Save ballot**. With the default 8 slots and at least 8 nominees, rank eight distinct games: give 8 points to your favorite, 7 to your next choice, down to 1 for your last pick. Each point value is available for only one game at a time; set a game to **Unranked** to free up its points. The top eight games make the lineup. With fewer nominees than slots, rank all nominees starting at the slot count. Voters can replace their ballot before close. Organizers only see turnout, not ballots or interim totals. Database and backup operators are trusted and can read stored ballots.
